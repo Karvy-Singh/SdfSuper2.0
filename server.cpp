@@ -1,101 +1,102 @@
-// #include <iostream>
-// #include <boost/asio.hpp>
-// 
-// using namespace boost::asio;
-// using ip::tcp;
-// using std::string;
-// using std::cout;
-// using std::endl;
-// 
-// string read_(tcp::socket & socket) {
-//        boost::asio::streambuf buf;
-//        boost::asio::read_until( socket, buf, "\n" );
-//        string data = boost::asio::buffer_cast<const char*>(buf.data());
-//        return data;
-// }
-// void send_(tcp::socket & socket, const string& message) {
-//        const string msg = message ;
-//        boost::asio::write( socket, boost::asio::buffer(message) );
-// }
-// 
-// int main() {
-//       boost::asio::io_service io_service;
-// //listen for new connection
-//       tcp::acceptor acceptor_(io_service, tcp::endpoint(tcp::v4(), 8888));
-// //socket creation 
-//       tcp::socket client1(io_service);
-//       acceptor_.accept(client1);
-// 
-//       tcp::socket client2(io_service);
-//       acceptor_.accept(client2);
-// 
-// 
-// //waiting for connection
-//      //  acceptor_.accept(client1);
-//      //  acceptor_.accept(client2);
-// while(true){
-// //read operation
-//       string message = read_(client1);
-//       cout << message<<endl;
-//       send_(client2, "yoo hello");
-// 
-// 
-//       //cout << message << endl;
-// //write operation
-// //  if (message!=""){
-// //        send_(client2, message);
-// //  }
-// //  else{
-// //    message=read_(client2);
-// //    send_(client1, message);
-// //  }
-// }
-// 
-//       //cout << "Servent sent Hello message to Client!" << endl;
-//    return 0;
-// }
+
 #include <iostream>
+#include <string>
+#include <unordered_map>
+#include <thread>
 #include <boost/asio.hpp>
 
-using namespace boost::asio;
-using namespace boost::asio::ip;
+using boost::asio::ip::tcp;
 
-void handle_client(tcp::socket &sender, tcp::socket &receiver, std::string client_name) {
-    char data[1024];
+// Global map: username -> socket
+std::unordered_map<std::string, std::unique_ptr<tcp::socket>> connected_clients;
+
+// Read a full line (until '\n') from a socket.
+std::string read_line(tcp::socket &sock) {
+    boost::asio::streambuf buffer;
     boost::system::error_code error;
     
-    // Read message from sender
-    size_t length = sender.read_some(buffer(data), error);
-    
-    if (!error) {
-        std::cout << client_name << " sent: " << std::string(data, length) << std::endl;
+    size_t bytes_transferred = boost::asio::read_until(sock, buffer, "\n", error);
+    if (error) return ""; // Return empty if there's an error or disconnect.
 
-        // Forward message to receiver
-        write(receiver, buffer(data, length), error);
+    std::istream is(&buffer);
+    std::string line;
+    std::getline(is, line);
+    return line;
+}
+
+// Handle a client session (runs in its own thread)
+void client_session(std::unique_ptr<tcp::socket> sock) {
+    try {
+        // 1) Read username from the client
+        std::string username = read_line(*sock);
+        if (username.empty()) {
+            std::cerr << "Invalid or empty username. Disconnecting client.\n";
+            return;
+        }
+
+        // 2) If username already exists, close the old socket
+        if (connected_clients.find(username) != connected_clients.end()) {
+            std::cout << "User " << username << " reconnected. Closing old session.\n";
+            connected_clients[username]->close();
+            connected_clients.erase(username); // Remove old socket entry
+        }
+
+        // 3) Store the new socket
+        connected_clients.emplace(username, std::move(sock));
+        std::cout << "User " << username << " connected.\n";
+
+        // Reference to the stored socket
+        tcp::socket &client_socket = *connected_clients[username];
+
+        // 4) Keep reading messages
+        while (true) {
+            std::string line = read_line(client_socket);
+            if (line.empty()) {
+                std::cout << "User '" << username << "' disconnected.\n";
+                connected_clients.erase(username);
+                return;
+            }
+
+            // 5) Expect "ReceiverName message"
+            auto spacePos = line.find(' ');
+            if (spacePos == std::string::npos) {
+                continue; // Ignore invalid messages
+            }
+
+            std::string receiverName = line.substr(0, spacePos);
+            std::string messageBody = line.substr(spacePos + 1);
+
+            // 6) Look up the receiver's socket
+            auto it = connected_clients.find(receiverName);
+            if (it != connected_clients.end()) {
+                std::string outgoing = username + ": " + messageBody + "\n";
+                boost::asio::write(*it->second, boost::asio::buffer(outgoing));
+            } else {
+                std::string errorMsg = "Server: User '" + receiverName + "' not found.\n";
+                boost::asio::write(client_socket, boost::asio::buffer(errorMsg));
+            }
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "Error in client session: " << e.what() << "\n";
     }
 }
 
 int main() {
-    io_context io;
-    tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 8888));
+    try {
+        boost::asio::io_context io;
+        tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 8888));
 
-    std::cout << "Server started on port 8888\n";
+        std::cout << "Server started on port 8888\n";
 
-    // Accept Client 1
-    tcp::socket client1(io);
-    acceptor.accept(client1);
-    std::cout << "Client 1 connected\n";
+        while (true) {
+            auto client = std::make_unique<tcp::socket>(io);
+            acceptor.accept(*client);
 
-    // Accept Client 2
-    tcp::socket client2(io);
-    acceptor.accept(client2);
-    std::cout << "Client 2 connected\n";
-
-    while (true) {
-        handle_client(client1, client2, "Karvy");
-        handle_client(client2, client1, "Harsh");
+            std::thread(client_session, std::move(client)).detach();
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "Server exception: " << e.what() << "\n";
     }
-
     return 0;
 }
 

@@ -1,128 +1,78 @@
-// #include <iostream>
-// #include <boost/asio.hpp>
-// #include <string>
-// using namespace boost::asio;
-// using ip::tcp;
-// using std::string;
-// using std::cout;
-// using std::cin;
-// using std::endl;
-// 
-// int main() {
-//      boost::asio::io_service io_service;
-// //socket creation
-//      tcp::socket socket(io_service);
-// //connection
-//      socket.connect( tcp::endpoint( boost::asio::ip::address::from_string("127.0.0.1"),8888));
-// // request/message from client
-// //  
-//   while (true){
-//      string msg ;
-//      getline(cin,msg);
-//      msg+='\n';
-//      boost::system::error_code error;
-//      boost::asio::write( socket, boost::asio::buffer(msg), error );
-// //     if( !error ) {
-// //        cout << "Client sent hello message!" << endl;
-// //     }
-//      if(error) {
-//         cout << "send failed: " << error.message() << endl;
-//      }
-//  // getting response from server
-//     boost::asio::streambuf receive_buffer;
-//     boost::asio::read(socket, receive_buffer, boost::asio::transfer_all(), error);
-//     if( error && error != boost::asio::error::eof ) {
-//         cout << "receive failed: " << error.message() << endl;
-//     }
-//     else {
-//         const char* data = boost::asio::buffer_cast<const char*>(receive_buffer.data());
-//         cout << data << endl;
-//     }}
-//     return 0;
-// }
-//
-//
 
-// #include <iostream>
-// #include <boost/asio.hpp>
-// 
-// using namespace boost::asio;
-// using namespace boost::asio::ip;
-// 
-// int main() {
-//     io_context io;
-//     tcp::socket socket(io);
-//     socket.connect(tcp::endpoint(address::from_string("127.0.0.1"), 8888));
-// 
-//     std::cout << "Connected to server. Type messages:\n";
-// 
-//     while (true) {
-//          std::string data_recieved;
-//         boost::system::error_code error;
-//         size_t length = socket.read_some(buffer(data_recieved), error);
-//         std::cout <<data_recieved<< std::endl;
-//         if (error) break;
-//         if(data_recieved !=""){
-//         std::cout << "Received: " << std::string(data_recieved, length) << std::endl;}
-//     
-//         else{
-//           std::cout<< "sent:" ;
-//         std::string message;
-//         std::getline(std::cin, message);
-//         
-//         //if (message.empty()) continue;
-// 
-//         // Send message to server
-//         write(socket, buffer(message + "\n"));
-//         }}
-//         // Receive response from server
-//         
-//     return 0;
-// }
-// 
-//
 #include <iostream>
-#include <boost/asio.hpp>
+#include <string>
 #include <thread>
+#include <boost/asio.hpp>
 
-using namespace boost::asio;
-using namespace boost::asio::ip;
+using boost::asio::ip::tcp;
 
-void receive_messages(tcp::socket &socket) {
-    char data[1024];
+// Thread function: continuously read lines from the server socket and print them.
+void receive_messages(tcp::socket &socket)
+{
     boost::system::error_code error;
-    
-    while (true) {
-        size_t length = socket.read_some(buffer(data), error);
-        if (error) break;
+    while (true)
+    {
+        boost::asio::streambuf buffer;
+        // read_until will block until we get a newline or an error
+        size_t bytes = boost::asio::read_until(socket, buffer, "\n", error);
+        if (error) {
+            std::cout << "Disconnected from server or error reading.\n";
+            return; // ends the thread
+        }
+        
+        std::istream is(&buffer);
+        std::string line;
+        std::getline(is, line);
 
-        std::cout << "\nReceived: " << std::string(data, length) << "\n> ";
-        std::cout.flush();
+        // Print out the message from server
+        std::cout << line << std::endl;
     }
 }
 
-int main() {
-    io_context io;
-    tcp::socket socket(io);
-    socket.connect(tcp::endpoint(address::from_string("127.0.0.1"), 8888));
+int main()
+{
+    try {
+        // 1) Set up Boost.Asio
+        boost::asio::io_context io;
+        tcp::socket socket(io);
 
-    std::cout << "Connected to server. Waiting for messages...\n";
+        // 2) Connect to the server
+        socket.connect(tcp::endpoint(boost::asio::ip::address::from_string("127.0.0.1"), 8888));
+        std::cout << "Connected to server.\n";
 
-    // Start a separate thread for receiving messages
-    std::thread receive_thread(receive_messages, std::ref(socket));
+        // 3) Ask for a username
+        std::string username;
+        std::cout << "Enter your username: ";
+        std::getline(std::cin, username);
 
-    while (true) {
-        std::string message;
-        std::cout << "> ";
-        std::getline(std::cin, message);
-        
-        if (message.empty()) continue;
+        // 4) Send username to server
+        boost::asio::write(socket, boost::asio::buffer(username + "\n"));
 
-        // Send message to server
-        write(socket, buffer(message + "\n"));
+        // 5) Start a thread to listen for incoming messages from the server
+        std::thread receiverThread(receive_messages, std::ref(socket));
+
+        // 6) Main loop: read lines from the user and send to the server
+        std::cout << "Type messages in the format: receiverName message...\n";
+        while (true)
+        {
+            std::string line;
+            std::getline(std::cin, line);
+
+            if (line.empty()) {
+                // skip empty lines
+                continue;
+            }
+
+            // Send line to server
+            boost::asio::write(socket, boost::asio::buffer(line + "\n"));
+        }
+
+        // 7) (Unreachable in this example, but if you ever break, join the thread)
+        receiverThread.join();
+
+    } catch (std::exception &e) {
+        std::cerr << "Client exception: " << e.what() << "\n";
     }
-
-    receive_thread.join();  // Join thread before exiting
     return 0;
 }
 
