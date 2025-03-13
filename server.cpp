@@ -1,102 +1,267 @@
-
 #include <iostream>
-#include <string>
-#include <unordered_map>
-#include <thread>
+#include <map>
 #include <boost/asio.hpp>
 
 using boost::asio::ip::tcp;
 
-// Global map: username -> socket
-std::unordered_map<std::string, std::unique_ptr<tcp::socket>> connected_clients;
+class ChatServer;
 
-// Read a full line (until '\n') from a socket.
-std::string read_line(tcp::socket &sock) {
-    boost::asio::streambuf buffer;
-    boost::system::error_code error;
-    
-    size_t bytes_transferred = boost::asio::read_until(sock, buffer, "\n", error);
-    if (error) return ""; // Return empty if there's an error or disconnect.
+class Connection : public std::enable_shared_from_this<Connection> {
+private:
+  tcp::socket socket_;
+  ChatServer &server_;
+  std::string username_;
+  bool active_{false};
+  std::array<char, 9> read_header_buf_;
 
-    std::istream is(&buffer);
-    std::string line;
-    std::getline(is, line);
-    return line;
-}
+  void doReadHeader();
+  void doReadBody(std::size_t length, uint8_t type);
+  bool validateMagic(const std::array<char, 4> &magic);
+  void handleMessage(uint8_t type, const std::string &value);
 
-// Handle a client session (runs in its own thread)
-void client_session(std::unique_ptr<tcp::socket> sock) {
-    try {
-        // 1) Read username from the client
-        std::string username = read_line(*sock);
-        if (username.empty()) {
-            std::cerr << "Invalid or empty username. Disconnecting client.\n";
-            return;
-        }
+public:
+  Connection(boost::asio::io_context &io, ChatServer &server)
+      : socket_(io), server_(server) {}
 
-        // 2) If username already exists, close the old socket
-        if (connected_clients.find(username) != connected_clients.end()) {
-            std::cout << "User " << username << " reconnected. Closing old session.\n";
-            connected_clients[username]->close();
-            connected_clients.erase(username); // Remove old socket entry
-        }
+  tcp::socket &socket() { return socket_; }
+  void start();
+  void close();
 
-        // 3) Store the new socket
-        connected_clients.emplace(username, std::move(sock));
-        std::cout << "User " << username << " connected.\n";
+  void setUsername(const std::string &name) { username_ = name; }
+  std::string getUsername() { return username_; }
 
-        // Reference to the stored socket
-        tcp::socket &client_socket = *connected_clients[username];
+  void send(const std::vector<uint8_t> &data);
+};
 
-        // 4) Keep reading messages
-        while (true) {
-            std::string line = read_line(client_socket);
-            if (line.empty()) {
-                std::cout << "User '" << username << "' disconnected.\n";
-                connected_clients.erase(username);
-                return;
-            }
+class ChatServer {
+private:
+  boost::asio::io_context &io_;
+  tcp::acceptor acceptor_;
+  std::map<std::string, std::shared_ptr<Connection>> connections_;
+  void doAccept();
 
-            // 5) Expect "ReceiverName message"
-            auto spacePos = line.find(' ');
-            if (spacePos == std::string::npos) {
-                continue; // Ignore invalid messages
-            }
+public:
+  ChatServer(boost::asio::io_context &io, unsigned short port)
+      : io_(io),
+        acceptor_(io, tcp::endpoint(tcp::v4(), port)) {}
+  void start() { doAccept(); };
+  void onDisconnect(std::shared_ptr<Connection> conn);
+  void handleLogin(std::shared_ptr<Connection> conn,
+                   const std::string &username);
+  void handleChatMessage(std::shared_ptr<Connection> sender,
+                         const std::string &receiver,
+                         const std::string &message);
+  void sendPacket(std::shared_ptr<Connection> conn, uint8_t type,
+                  const std::string &value);
+};
 
-            std::string receiverName = line.substr(0, spacePos);
-            std::string messageBody = line.substr(spacePos + 1);
+// ChatServer Thingy
 
-            // 6) Look up the receiver's socket
-            auto it = connected_clients.find(receiverName);
-            if (it != connected_clients.end()) {
-                std::string outgoing = username + ": " + messageBody + "\n";
-                boost::asio::write(*it->second, boost::asio::buffer(outgoing));
-            } else {
-                std::string errorMsg = "Server: User '" + receiverName + "' not found.\n";
-                boost::asio::write(client_socket, boost::asio::buffer(errorMsg));
-            }
-        }
-    } catch (const std::exception &e) {
-        std::cerr << "Error in client session: " << e.what() << "\n";
+void ChatServer::onDisconnect(std::shared_ptr<Connection> conn) {
+  auto username = conn->getUsername();
+  if (!username.empty()) {
+    auto it = connections_.find(username);
+    if (it != connections_.end() && it->second == conn) {
+      connections_.erase(it);
     }
+  }
+  conn->close();
 }
 
-int main() {
-    try {
-        boost::asio::io_context io;
-        tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 8888));
+void ChatServer::handleLogin(std::shared_ptr<Connection> conn,
+                             const std::string &username) {
+  auto it = connections_.find(username);
+  if (it != connections_.end()) {
+    it->second->close();
+    connections_.erase(it);
+  }
+  conn->setUsername(username);
+  connections_[username] = conn;
+  // TODO: setup server messages (done)
+  sendPacket(conn, 0xff, "Logged in successfully");
+}
 
-        std::cout << "Server started on port 8888\n";
+void ChatServer::handleChatMessage(std::shared_ptr<Connection> sender,
+                                   const std::string &receiver,
+                                   const std::string &message) {
+  auto it = connections_.find(receiver);
+  if (it != connections_.end()) {
+    auto receiver_conn = it->second;
+    std::string final_msg = sender->getUsername() + ": " + message;
+    sendPacket(receiver_conn, 0x02, final_msg);
+  }else {
+    sendPacket(sender, 0xff, "Receiver " + receiver +  " does not exist");
+  }
+  // TODO: setup server messages (send not found) (done)
 
-        while (true) {
-            auto client = std::make_unique<tcp::socket>(io);
-            acceptor.accept(*client);
+}
 
-            std::thread(client_session, std::move(client)).detach();
+void ChatServer::sendPacket(std::shared_ptr<Connection> conn, uint8_t type,
+                            const std::string &value) {
+  std::vector<uint8_t> packet;
+  // Magic (yeah)
+  packet.push_back('J');
+  packet.push_back('I');
+  packet.push_back('I');
+  packet.push_back('T');
+  // Type (idk)
+  packet.push_back(type);
+  // Length (big-endian) (big-baby)
+  uint32_t len = static_cast<uint32_t>(value.size());
+  packet.push_back((len >> 24) & 0xFF);
+  packet.push_back((len >> 16) & 0xFF);
+  packet.push_back((len >> 8) & 0xFF);
+  packet.push_back(len & 0xFF);
+  // Value
+  for (char c : value) {
+    packet.push_back(static_cast<uint8_t>(c));
+  }
+  conn->send(packet);
+}
+
+void ChatServer::doAccept() {
+  auto new_conn = std::make_shared<Connection>(io_, *this);
+  acceptor_.async_accept(new_conn->socket(),
+   [this, new_conn](const boost::system::error_code &ec) {
+     if (!ec) {
+       new_conn->start();
+     }
+     doAccept();
+   }
+  );
+}
+
+//=======================================
+// main() for the server
+//=======================================
+int main(int argc, char *argv[]) {
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " <port>\n";
+    return 1;
+  }
+
+  unsigned short port = static_cast<unsigned short>(std::stoi(argv[1]));
+
+  try {
+    boost::asio::io_context io_context;
+    ChatServer server(io_context, port);
+    server.start();
+
+    std::cout << "[Server] Listening on port " << port << "...\n";
+    io_context.run();
+  } catch (std::exception &e) {
+    std::cerr << "[Server] Exception: " << e.what() << "\n";
+  }
+
+  return 0;
+}
+
+void Connection::start() {
+  active_ = true;
+  doReadHeader();
+}
+
+void Connection::close() {
+  if (!active_)
+    return;
+  active_ = false;
+  boost::system::error_code ec;
+  socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+  socket_.close(ec);
+}
+
+void Connection::send(const std::vector<uint8_t> &data) {
+  if (!active_)
+    return;
+  auto self = shared_from_this();
+  boost::asio::async_write(
+      socket_, boost::asio::buffer(data),
+      [this, self](const boost::system::error_code &ec, std::size_t) {
+        if (ec) {
+          server_.onDisconnect(self);
         }
-    } catch (const std::exception &e) {
-        std::cerr << "Server exception: " << e.what() << "\n";
-    }
-    return 0;
+      });
 }
 
+void Connection::doReadHeader() {
+  auto self = shared_from_this();
+  boost::asio::async_read(
+      socket_, boost::asio::buffer(read_header_buf_),
+      [this, self](const boost::system::error_code &ec,
+                   std::size_t bytes_read) {
+        if (ec || bytes_read != read_header_buf_.size()) {
+          server_.onDisconnect(self);
+          return;
+        }
+
+        std::array<char, 4> magic;
+        std::memcpy(magic.data(), read_header_buf_.data(), 4);
+        if (!validateMagic(magic)) {
+          server_.onDisconnect(self);
+          return;
+        }
+
+        uint8_t type = static_cast<uint8_t>(read_header_buf_[4]);
+
+        uint32_t length = 0;
+        length |= (static_cast<unsigned char>(read_header_buf_[5]) << 24);
+        length |= (static_cast<unsigned char>(read_header_buf_[6]) << 16);
+        length |= (static_cast<unsigned char>(read_header_buf_[7]) << 8);
+        length |= (static_cast<unsigned char>(read_header_buf_[8]));
+
+        if (length == 0) {
+          handleMessage(type, "");
+          doReadHeader();
+        } else {
+          doReadBody(length, type);
+        }
+      });
+}
+
+void Connection::doReadBody(std::size_t length, uint8_t type) {
+  auto self = shared_from_this();
+  auto body_buf = std::make_shared<std::vector<char>>(length);
+
+  boost::asio::async_read(
+      socket_, boost::asio::buffer(*body_buf),
+      [this, self, body_buf, type](const boost::system::error_code &ec,
+                                   std::size_t bytes_read) {
+        if (ec || bytes_read != body_buf->size()) {
+          // error or partial read => disconnect
+          server_.onDisconnect(self);
+          return;
+        }
+
+        std::string value(body_buf->data(), body_buf->size());
+        handleMessage(type, value);
+        doReadHeader();
+      });
+}
+
+bool Connection::validateMagic(const std::array<char, 4> &magic) {
+  return (magic[0] == 'J' && magic[1] == 'I' && magic[2] == 'I' &&
+          magic[3] == 'T');
+}
+
+void Connection::handleMessage(uint8_t type, const std::string &value) {
+  switch (type) {
+  case 0x01: // login
+  {
+    server_.handleLogin(shared_from_this(), value);
+  } break;
+
+  case 0x02: // chat message: TODO: serialise these messages to user ids
+  {
+    auto pos = value.find(' ');
+    if (pos != std::string::npos) {
+      std::string receiver = value.substr(0, pos);
+      std::string msg = value.substr(pos + 1);
+      server_.handleChatMessage(shared_from_this(), receiver, msg);
+    }
+  } break;
+
+  default: {
+    server_.onDisconnect(shared_from_this());
+  } break;
+  }
+}

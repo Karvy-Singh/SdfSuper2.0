@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <string>
 #include <thread>
@@ -6,73 +5,199 @@
 
 using boost::asio::ip::tcp;
 
-// Thread function: continuously read lines from the server socket and print them.
-void receive_messages(tcp::socket &socket)
-{
-    boost::system::error_code error;
-    while (true)
-    {
-        boost::asio::streambuf buffer;
-        // read_until will block until we get a newline or an error
-        size_t bytes = boost::asio::read_until(socket, buffer, "\n", error);
-        if (error) {
-            std::cout << "Disconnected from server or error reading.\n";
-            return; // ends the thread
-        }
-        
-        std::istream is(&buffer);
-        std::string line;
-        std::getline(is, line);
+class ChatClient {
+private:
+  boost::asio::io_context io_;
+  tcp::socket socket_;
+  std::string host_;
+  unsigned short int port_;
+  bool running_{true};
+  std::string user_;
+  std::array<char, 9> read_header_buf_;
 
-        // Print out the message from server
-        std::cout << line << std::endl;
-    }
-}
+  void doReadHeader();
+  void doReadBody(std::size_t length, uint8_t type);
+  bool validateMagic(const std::array<char, 4> &magic);
+  void handleServerMessage(uint8_t type, const std::string &value);
+  void sendPacket(uint8_t type, const std::string &value);
 
-int main()
-{
+public:
+  ChatClient(const std::string &host, unsigned short int port)
+      : socket_(io_), host_(host), port_(port) {}
+  bool connect() {
     try {
-        // 1) Set up Boost.Asio
-        boost::asio::io_context io;
-        tcp::socket socket(io);
+      socket_ = tcp::socket(io_);
+      socket_.connect(
+          tcp::endpoint(boost::asio::ip::make_address(host_), port_));
+    } catch (std::exception &e) {
+      std::cout << "[Client] ERROR: " << e.what() << std::endl;
+      return false;
+    }
 
-        // 2) Connect to the server
-        socket.connect(tcp::endpoint(boost::asio::ip::make_address("127.0.0.1"), 8888));
-        std::cout << "Connected to server.\n";
+    doReadHeader();
+    return true;
+  }
 
-        // 3) Ask for a username
-        std::string username;
-        std::cout << "Enter your username: ";
-        std::getline(std::cin, username);
+  void run() {
+    std::cout << "Enter your username: ";
+    std::getline(std::cin, user_);
 
-        // 4) Send username to server
-        boost::asio::write(socket, boost::asio::buffer(username + "\n"));
+    sendPacket(0x01, user_);
 
-        // 5) Start a thread to listen for incoming messages from the server
-        std::thread receiverThread(receive_messages, std::ref(socket));
+    std::thread io_thread([this]() { io_.run(); });
 
-        // 6) Main loop: read lines from the user and send to the server
-        std::cout << "Type messages in the format: receiverName message...\n";
-        while (true)
-        {
-            std::string line;
-            std::getline(std::cin, line);
+    while (running_) {
+      std::string line;
+      if (!std::getline(std::cin, line)) {
+        running_ = false;
+        break;
+      }
+      if (line.empty())
+        continue;
 
-            if (line.empty()) {
-                // skip empty lines
-                continue;
-            }
+      sendPacket(0x02, line);
+    }
+    boost::system::error_code ec;
+    socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+    socket_.close(ec);
 
-            // Send line to server
-            boost::asio::write(socket, boost::asio::buffer(line + "\n"));
+    io_.stop();
+    if (io_thread.joinable())
+      io_thread.join();
+  }
+};
+
+void ChatClient::doReadHeader() {
+  auto self = this;
+  boost::asio::async_read(
+      socket_, boost::asio::buffer(read_header_buf_),
+      [this, self](const boost::system::error_code &ec,
+                   std::size_t bytes_read) {
+        if (ec || bytes_read != read_header_buf_.size()) {
+          running_ = false;
+          return;
         }
 
-        // 7) (Unreachable in this example, but if you ever break, join the thread)
-        receiverThread.join();
+        // Parse magic (it not fscking magic)
+        std::array<char, 4> magic;
+        std::memcpy(magic.data(), read_header_buf_.data(), 4);
+        if (!validateMagic(magic)) {
+          std::cerr << "[Client] Invalid Magic. Disconnecting.\n";
+          running_ = false;
+          return;
+        }
 
-    } catch (std::exception &e) {
-        std::cerr << "Client exception: " << e.what() << "\n";
-    }
-    return 0;
+        // Type (no)
+        uint8_t type = static_cast<uint8_t>(read_header_buf_[4]);
+
+        // Length (very big)
+        uint32_t length = 0;
+        length |= (static_cast<unsigned char>(read_header_buf_[5]) << 24);
+        length |= (static_cast<unsigned char>(read_header_buf_[6]) << 16);
+        length |= (static_cast<unsigned char>(read_header_buf_[7]) << 8);
+        length |= (static_cast<unsigned char>(read_header_buf_[8]));
+
+        if (length == 0) {
+          handleServerMessage(type, "");
+          if (running_)
+            doReadHeader();
+        } else {
+          doReadBody(length, type);
+        }
+      });
 }
 
+void ChatClient::doReadBody(std::size_t length, uint8_t type) {
+  auto self = this;
+  auto body_buf = std::make_shared<std::vector<char>>(length);
+  boost::asio::async_read(
+      socket_, boost::asio::buffer(*body_buf),
+      [this, self, body_buf, type](const boost::system::error_code &ec,
+                                   std::size_t bytes_read) {
+        if (ec || bytes_read != body_buf->size()) {
+          running_ = false;
+          return;
+        }
+
+        std::string value(body_buf->data(), body_buf->size());
+        handleServerMessage(type, value);
+
+        if (running_)
+          doReadHeader();
+      });
+}
+
+bool ChatClient::validateMagic(const std::array<char, 4> &magic) {
+  return (magic[0] == 'J' && magic[1] == 'I' && magic[2] == 'I' &&
+          magic[3] == 'T');
+}
+
+void ChatClient::sendPacket(uint8_t type, const std::string &value) {
+  std::vector<uint8_t> packet;
+  // magic (sleek)
+  packet.push_back('J');
+  packet.push_back('I');
+  packet.push_back('I');
+  packet.push_back('T');
+  // type
+  packet.push_back(type);
+  // length (very big)
+  uint32_t len = static_cast<uint32_t>(value.size());
+  packet.push_back((len >> 24) & 0xFF);
+  packet.push_back((len >> 16) & 0xFF);
+  packet.push_back((len >> 8) & 0xFF);
+  packet.push_back(len & 0xFF);
+  // value
+  for (char c : value) {
+    packet.push_back(static_cast<uint8_t>(c));
+  }
+
+  boost::system::error_code ec;
+  boost::asio::write(socket_, boost::asio::buffer(packet), ec);
+  if (ec) {
+    std::cerr << "[Client] Send failed: " << ec.message() << std::endl;
+    running_ = false;
+  }
+}
+
+void ChatClient::handleServerMessage(uint8_t type, const std::string &value) {
+  switch (type) {
+  case 0x02: // chat message
+    std::cout << value << std::endl;
+    break;
+  case 0xff: // server messages
+    std::cout << "[Server] " << value << std::endl;
+    break;
+  default:
+    std::cout << "[Client] ERROR: Server sent a packet which this version of "
+                 "client does not understand."
+              << std::endl;
+    break;
+  }
+}
+
+int main(int argc, char *argv[]) {
+  if (argc < 3) {
+    std::cerr << "Usage: " << argv[0] << " <host> <port>\n";
+    return 1;
+  }
+
+  const std::string host = argv[1];
+  const unsigned short port = static_cast<unsigned short>(std::stoi(argv[2]));
+
+  try {
+    ChatClient client(host, port);
+    if (!client.connect()) {
+      std::cerr << "[Client] Failed to connect to " << host << ":" << port
+                << std::endl;
+      return 1;
+    }
+
+    std::cout << "[Client] Connected to " << host << ":" << port << std::endl;
+    client.run();
+  } catch (std::exception &e) {
+    std::cerr << "[Client] Exception: " << e.what() << "\n";
+  }
+
+  return 0;
+}
