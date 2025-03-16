@@ -1,8 +1,10 @@
 #include <iostream>
 #include <map>
 #include <boost/asio.hpp>
+#include <nlohmann/json.hpp>
 
 using boost::asio::ip::tcp;
+using json = nlohmann::json;
 
 class ChatServer;
 
@@ -252,12 +254,10 @@ void Connection::handleMessage(uint8_t type, const std::string &value) {
 
   case 0x02: // chat message: TODO: serialise these messages to user ids
   {
-    auto pos = value.find(' ');
-    if (pos != std::string::npos) {
-      std::string receiver = value.substr(0, pos);
-      std::string msg = value.substr(pos + 1);
-      server_.handleChatMessage(shared_from_this(), receiver, msg);
-    }
+    json jsonobj= json::parse(value);
+    std::string receiver= jsonobj["receiver"];
+    //std::string msg= jsonobj["content"];
+    server_.handleChatMessage(shared_from_this(), receiver, value);
   } break;
 
   default: {
