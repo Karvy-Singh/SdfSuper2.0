@@ -20,6 +20,30 @@ class putinsqldb{
     void create_and_insert();
 };
 
+static int sqlcallback(void* data, int argc, char** argv, char** azColName) {
+    if (argc > 0 && argv[0]) { 
+      int count = std::stoi(argv[0]); 
+      bool* exists = static_cast<bool*>(data);
+      *exists = (count > 0); 
+    }
+    return 0;
+}
+
+bool userExists(sqlite3* db, const std::string& username, const std::string& password) {
+    std::string sql = "SELECT COUNT(*) FROM USER WHERE USERNAME = '" + username + "' AND PASSWORD = '" + password + "';";
+    
+    bool exists = false;
+    char* errMsg = nullptr;
+    
+    if (sqlite3_exec(db, sql.c_str(), sqlcallback, &exists, &errMsg) != SQLITE_OK) {
+        std::cerr << "Error: " << errMsg << std::endl;
+        sqlite3_free(errMsg);
+        return false;
+    }
+    
+    return exists;
+}
+
 void putinsqldb::create_and_insert(){
   sqlite3* DB; 
   char* messageError;
@@ -38,6 +62,7 @@ void putinsqldb::create_and_insert(){
       sqlite3_free(messageError);
 }
 
+  if(!userExists(DB,username,password)){
   std::string insert= std::format("INSERT INTO USER(USERNAME,PASSWORD) VALUES('{}','{}');",username,password);
   
   int entryStatus= sqlite3_exec(DB, insert.c_str(), NULL, 0, &messageError);
@@ -45,7 +70,7 @@ void putinsqldb::create_and_insert(){
   if (entryStatus != SQLITE_OK) {
       std::cerr << "Error inserting into table: " << messageError << std::endl;
       sqlite3_free(messageError);
-}
+}}
 }
 
 
