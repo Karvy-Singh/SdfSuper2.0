@@ -213,7 +213,8 @@ private:
   std::string host_;
   unsigned short int port_;
   bool running_{true};
-  std::string user_;
+  std::string username;
+  std::string password;
   std::array<char, 9> read_header_buf_;
 
   void doReadHeader();
@@ -242,7 +243,17 @@ public:
  
   void run() {
     std::cout << "Enter your username: ";
-    std::getline(std::cin, user_);
+    std::getline(std::cin, username);
+
+    std::cout << "Enter your password: ";
+    std::getline(std::cin, password);
+
+    json user_json={
+      {"username",username},
+      {"password",password}
+    };
+    
+    std::string user_= user_json.dump();
 
     sendPacket(0x01, user_);
 

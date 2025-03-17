@@ -1,12 +1,53 @@
 #include <iostream>
+#include <fstream>
 #include <map>
+#include <sqlite3.h> 
+#include <format>
 #include <boost/asio.hpp>
+#include <stdbool.h>
 #include <nlohmann/json.hpp>
 
 using boost::asio::ip::tcp;
 using json = nlohmann::json;
 
 class ChatServer;
+
+class putinsqldb{
+  std::string username;
+  std::string password;
+  public:
+    putinsqldb(std::string u, std::string p): username(u), password(p){}
+    void create_and_insert();
+};
+
+void putinsqldb::create_and_insert(){
+  sqlite3* DB; 
+  char* messageError;
+  int exit = sqlite3_open("user_data.db", &DB); 
+  if (exit != SQLITE_OK) {
+    std::cerr << "Error opening database" << std::endl;
+     }
+  std::string createtable= "CREATE TABLE IF NOT EXISTS USER("
+                            "USERNAME TEXT NOT NULL,"
+                            "PASSWORD TEXT NOT NULL);";
+
+  int tableStatus = sqlite3_exec(DB, createtable.c_str(), NULL, 0, &messageError);
+
+  if (tableStatus != SQLITE_OK) {
+      std::cerr << "Error creating table: " << messageError << std::endl;
+      sqlite3_free(messageError);
+}
+
+  std::string insert= std::format("INSERT INTO USER(USERNAME,PASSWORD) VALUES('{}','{}');",username,password);
+  
+  int entryStatus= sqlite3_exec(DB, insert.c_str(), NULL, 0, &messageError);
+  
+  if (entryStatus != SQLITE_OK) {
+      std::cerr << "Error inserting into table: " << messageError << std::endl;
+      sqlite3_free(messageError);
+}
+}
+
 
 class Connection : public std::enable_shared_from_this<Connection> {
 private:
@@ -246,17 +287,18 @@ bool Connection::validateMagic(const std::array<char, 4> &magic) {
 }
 
 void Connection::handleMessage(uint8_t type, const std::string &value) {
+  json jsonobj= json::parse(value);
   switch (type) {
   case 0x01: // login
-  {
-    server_.handleLogin(shared_from_this(), value);
+  { 
+    putinsqldb user(jsonobj["username"],jsonobj["password"]);
+    user.create_and_insert();
+    server_.handleLogin(shared_from_this(), jsonobj["username"]);
   } break;
 
   case 0x02: // chat message: TODO: serialise these messages to user ids
   {
-    json jsonobj= json::parse(value);
     std::string receiver= jsonobj["receiver"];
-    //std::string msg= jsonobj["content"];
     server_.handleChatMessage(shared_from_this(), receiver, value);
   } break;
 
