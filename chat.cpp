@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <string>
@@ -31,6 +32,19 @@ std::vector<std::string> get_contacts() {
   return a;
 }
 
+class SquareButton : public QPushButton {
+public:
+  explicit SquareButton(const QString &text, QWidget *parent = nullptr)
+      : QPushButton(text, parent) {}
+
+protected:
+  void resizeEvent(QResizeEvent *event) override {
+    QPushButton::resizeEvent(event);
+    int side = height();
+    setFixedWidth(side);
+  }
+};
+
 class ChatUI : public QWidget {
 public:
   ChatUI() { setupUI(); }
@@ -39,6 +53,14 @@ private:
   void setupUI() {
 
     QVBoxLayout *leftLayout = new QVBoxLayout;
+
+    QHBoxLayout *newChatLayout = new QHBoxLayout();
+    QLineEdit *newChatEdit = new QLineEdit();
+    newChatEdit->setPlaceholderText("Start a new chat...");
+    QPushButton *newChatBtn = new SquareButton("+");
+    newChatLayout->addWidget(newChatEdit);
+    newChatLayout->addWidget(newChatBtn);
+    leftLayout->addLayout(newChatLayout);
 
     QVBoxLayout *chatButtonsLayout = new QVBoxLayout();
     auto contacts = get_contacts();
@@ -60,6 +82,7 @@ private:
     }
 
     leftLayout->addLayout(chatButtonsLayout);
+    leftLayout->addStretch();
     QVBoxLayout *rightLayout = new QVBoxLayout;
 
     QHBoxLayout *headerLayout = new QHBoxLayout;
@@ -84,6 +107,7 @@ private:
     rightLayout->addLayout(inputLayout, 1);
 
     QHBoxLayout *mainLayout = new QHBoxLayout;
+
     mainLayout->addLayout(leftLayout, 1);
     mainLayout->addWidget(createLine(Qt::Vertical));
     mainLayout->addLayout(rightLayout, 3);
