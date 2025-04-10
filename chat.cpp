@@ -32,10 +32,24 @@ std::vector<std::string> get_contacts() {
   return a;
 }
 
-class SquareButton : public QPushButton {
+class IconButton : public QPushButton {
 public:
-  explicit SquareButton(const QString &text, QWidget *parent = nullptr)
-      : QPushButton(text, parent) {}
+  explicit IconButton(const QString &text, QWidget *parent = nullptr)
+      : QPushButton("", parent) {
+
+    QIcon attachIcon(text); // from Qt resource or file path
+    setIcon(attachIcon);
+    setIconSize(QSize(20, 20)); // adjust icon size as you like
+    setStyleSheet("QPushButton {"
+                  "border: none;"
+                  "padding: 8px;"
+                  "background-color: transparent;"
+                  "border-radius: 10px;"
+                  "}"
+                  "QPushButton:hover {"
+                  "background-color: #e0e0e0;"
+                  "}");
+  }
 
 protected:
   void resizeEvent(QResizeEvent *event) override {
@@ -57,7 +71,7 @@ private:
     QHBoxLayout *newChatLayout = new QHBoxLayout();
     QLineEdit *newChatEdit = new QLineEdit();
     newChatEdit->setPlaceholderText("Start a new chat...");
-    QPushButton *newChatBtn = new SquareButton("+");
+    QPushButton *newChatBtn = new IconButton("add.svg");
     newChatLayout->addWidget(newChatEdit);
     newChatLayout->addWidget(newChatBtn);
     leftLayout->addLayout(newChatLayout);
@@ -96,15 +110,20 @@ private:
     QHBoxLayout *inputLayout = new QHBoxLayout;
     QLineEdit *typemsg = new QLineEdit();
     typemsg->setPlaceholderText("Type a Message...");
-    typemsg->setStyleSheet(
-        "background-color: white;  border: 1px solid black;");
-    inputLayout->addWidget(typemsg);
+    // typemsg->setStyleSheet(
+    //     "background-color: white;  border: 1px solid black;");
+    IconButton *attachBtn = new IconButton("attach.svg");
+    IconButton *sendBtn = new IconButton("send.svg");
 
-    rightLayout->addLayout(headerLayout, 1);
+    inputLayout->addWidget(typemsg);
+    inputLayout->addWidget(attachBtn);
+    inputLayout->addWidget(sendBtn);
+
+    rightLayout->addLayout(headerLayout, 0);
     rightLayout->addWidget(createLine(Qt::Horizontal));
     rightLayout->addLayout(messageLayout, 15);
     rightLayout->addWidget(createLine(Qt::Horizontal));
-    rightLayout->addLayout(inputLayout, 1);
+    rightLayout->addLayout(inputLayout);
 
     QHBoxLayout *mainLayout = new QHBoxLayout;
 
@@ -113,7 +132,7 @@ private:
     mainLayout->addLayout(rightLayout, 3);
 
     setLayout(mainLayout);
-    // setFixedSize(1200, 900);
+    setFixedSize(1200, 900);
     setStyleSheet("background-color: lightyellow;");
   }
 };
