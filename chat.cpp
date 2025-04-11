@@ -42,9 +42,9 @@ public:
     setIconSize(QSize(20, 20)); // adjust icon size as you like
     setStyleSheet("QPushButton {"
                   "border: none;"
-                  "padding: 8px;"
+                  "padding: 5px;"
                   "background-color: transparent;"
-                  "border-radius: 10px;"
+                  "border-radius: 4px;"
                   "}"
                   "QPushButton:hover {"
                   "background-color: #e0e0e0;"
@@ -59,6 +59,16 @@ protected:
   }
 };
 
+class TextEdit : public QLineEdit {
+public:
+  TextEdit() : QLineEdit() {
+    setMinimumHeight(30);
+    QFont f = font();
+    f.setPointSize(11);
+    setFont(f);
+  }
+};
+
 class ChatUI : public QWidget {
 public:
   ChatUI() { setupUI(); }
@@ -69,7 +79,7 @@ private:
     QVBoxLayout *leftLayout = new QVBoxLayout;
 
     QHBoxLayout *newChatLayout = new QHBoxLayout();
-    QLineEdit *newChatEdit = new QLineEdit();
+    TextEdit *newChatEdit = new TextEdit();
     newChatEdit->setPlaceholderText("Start a new chat...");
     QPushButton *newChatBtn = new IconButton("add.svg");
     newChatLayout->addWidget(newChatEdit);
@@ -86,6 +96,7 @@ private:
                                 "padding: 8px;"
                                 "background-color: transparent;"
                                 "font-size: 16px;"
+                                "border-radius: 4px"
                                 "}"
                                 "QPushButton:hover {"
                                 "background-color: #e0e0e0;"
@@ -108,7 +119,7 @@ private:
     messageLayout->addWidget(messageLabel);
 
     QHBoxLayout *inputLayout = new QHBoxLayout;
-    QLineEdit *typemsg = new QLineEdit();
+    TextEdit *typemsg = new TextEdit();
     typemsg->setPlaceholderText("Type a Message...");
     // typemsg->setStyleSheet(
     //     "background-color: white;  border: 1px solid black;");
