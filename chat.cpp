@@ -8,9 +8,14 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QString>
+#include <QStringList>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <cstdlib>
+#include <ctime>
+#include <iostream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -108,11 +113,123 @@ public:
   }
 };
 
+std::mt19937 &getRNG() {
+  static std::mt19937 rng(static_cast<unsigned int>(std::time(nullptr)));
+  return rng;
+}
+
+// Function to generate a random integer in the range [min, max]
+int getRandomInt(int min, int max) {
+  std::uniform_int_distribution<int> dist(min, max);
+  return dist(getRNG());
+}
+
+// Function to generate a random string of random length
+QString generateRandomString(int minLen, int maxLen) {
+  const std::string charset =
+      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  int randomLength = getRandomInt(minLen, maxLen);
+  QString result;
+  result.reserve(randomLength);
+
+  for (int i = 0; i < randomLength; ++i) {
+    result += charset[getRandomInt(0, static_cast<int>(charset.size()) - 1)];
+  }
+
+  return result;
+}
+// A pseudo function that returns message strings for the chosen chat:
+QStringList getMessagesForChat(int chatId) {
+  QStringList chats;
+  for (int i = 0; i < getRandomInt(20, 200); i++) {
+    chats << generateRandomString(10, 100);
+  }
+
+  return chats;
+}
+
 class ChatUI : public QWidget {
 public:
   ChatUI() { setupUI(); }
 
 private:
+  QVBoxLayout *scrollLayout = nullptr;
+  QScrollArea *scrollArea = nullptr;
+
+  void clearLayout(QLayout *layout) {
+    if (!layout)
+      return;
+
+    QLayoutItem *item;
+    while ((item = layout->takeAt(0)) != nullptr) {
+      // Recursively clear sub-layouts
+      if (item->layout()) {
+        clearLayout(item->layout());
+      }
+      // Schedule child widgets for deletion
+      if (item->widget()) {
+        item->widget()->deleteLater();
+      }
+      // Now delete the QLayoutItem itself
+      delete item;
+    }
+  }
+  void clearMessages() { clearLayout(scrollLayout); }
+
+  void loadChatMessages(int chatId) {
+    QStringList messages = getMessagesForChat(chatId);
+
+    for (int i = 0; i < messages.size(); i++) {
+      bool isUser = rand() % 2;
+      QHBoxLayout *msgLayout = new QHBoxLayout();
+
+      QFrame *bubble = createMessageBubble(messages[i], isUser);
+
+      if (isUser) {
+        msgLayout->addStretch();
+        msgLayout->addWidget(bubble);
+      } else {
+        msgLayout->addWidget(bubble);
+        msgLayout->addStretch();
+      }
+      scrollLayout->addLayout(msgLayout);
+    }
+
+    scrollLayout->addStretch();
+
+    // Optionally scroll to bottom
+    if (scrollArea && scrollArea->verticalScrollBar()) {
+      QScrollBar *msgScrollBar = scrollArea->verticalScrollBar();
+      msgScrollBar->setStyleSheet(
+          "QScrollBar:vertical {"
+          "background: transparent;"
+          "width: 5px;"
+          "margin: 0;"
+          "}"
+          ""
+          "QScrollBar::handle:vertical {"
+          "background: #C3C0BB;"
+          "border-radius: 2.4px;"
+          "}"
+          ""
+          "QScrollBar::add-line:vertical {"
+          "height: 0px;"
+          "}"
+          ""
+          "QScrollBar::sub-line:vertical {"
+          "height: 0px;"
+          "}"
+          ""
+          "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+          "height: 0px;"
+          "}");
+      QMetaObject::invokeMethod(
+          scrollArea,
+          [=]() { msgScrollBar->setValue(msgScrollBar->maximum()); },
+          Qt::QueuedConnection);
+      msgScrollBar->setValue(msgScrollBar->maximum());
+    }
+  }
   void setupUI() {
 
     QVBoxLayout *leftLayout = new QVBoxLayout;
@@ -128,7 +245,7 @@ private:
     QVBoxLayout *chatButtonsLayout = new QVBoxLayout();
     auto contacts = get_contacts();
     for (auto cnt : contacts) {
-      QPushButton *contactBtn = new QPushButton(cnt.c_str());
+      QPushButton *contactBtn = new QPushButton(cnt.c_str(), this);
       contactBtn->setStyleSheet("QPushButton {"
                                 "border: none;"
                                 "text-align: left;"
@@ -141,6 +258,10 @@ private:
                                 "background-color: #e0e0e0;"
                                 "}");
       contactBtn->setCursor(Qt::PointingHandCursor);
+      connect(contactBtn, &QPushButton::clicked, this, [this]() {
+        this->clearMessages();
+        this->loadChatMessages(0);
+      });
       // contactBtn->setFixedSize(400, 40);
       chatButtonsLayout->addWidget(contactBtn);
     }
@@ -154,31 +275,13 @@ private:
     headerLabel->setStyleSheet("font-weight: bold; font-size: 14pt;");
     headerLayout->addWidget(headerLabel);
 
-    QScrollArea *scrollArea = new QScrollArea();
+    scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
 
     QWidget *scrollWidget = new QWidget();
-    QVBoxLayout *scrollLayout = new QVBoxLayout(scrollWidget);
+    scrollLayout = new QVBoxLayout(scrollWidget);
 
-    for (int i = 0; i < 100; i++) {
-      QHBoxLayout *msgLayout = new QHBoxLayout();
-      bool isUser = rand() % 2;
-
-      // Create bubble
-      QFrame *bubble =
-          createMessageBubble(QString("Message %1").arg(i), isUser);
-
-      if (isUser) {
-        msgLayout->addStretch();
-        msgLayout->addWidget(bubble);
-      } else {
-        msgLayout->addWidget(bubble);
-        msgLayout->addStretch();
-      }
-      scrollLayout->addLayout(msgLayout);
-    }
-    scrollLayout->addStretch();
-
+    loadChatMessages(0);
     scrollWidget->setLayout(scrollLayout);
     scrollArea->setWidget(scrollWidget);
 
