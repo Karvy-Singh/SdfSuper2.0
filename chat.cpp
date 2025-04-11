@@ -1,12 +1,16 @@
 #include <QApplication>
 #include <QFrame>
+#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -22,6 +26,41 @@ QFrame *createLine(Qt::Orientation orientation) {
   return line;
 }
 
+QFrame *createMessageBubble(const QString &text, bool isUserMessage) {
+  // Create a frame to hold the message label
+  QFrame *bubbleFrame = new QFrame();
+  bubbleFrame->setFrameShape(QFrame::NoFrame);
+  QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect();
+  shadow->setBlurRadius(5.0); // how soft the shadow is
+  bubbleFrame->setGraphicsEffect(shadow);
+  // Basic bubble style: rounded corners, border, padding
+  // Different background colors for user vs. other
+  if (isUserMessage) {
+    bubbleFrame->setStyleSheet("QFrame { "
+                               "  border-radius: 10px; "
+                               "  background-color: #D9FDD3; "
+                               "}");
+    shadow->setOffset(-1.0, 1.0);
+  } else {
+    bubbleFrame->setStyleSheet("QFrame { "
+                               "  border-radius: 10px; "
+                               "  background-color: #FFFFFF; "
+                               "}");
+    shadow->setOffset(1.0, 1.0);
+  }
+
+  // Create label for message text
+  QLabel *msgLabel = new QLabel(text);
+  msgLabel->setStyleSheet("QLabel {border:none;}");
+  msgLabel->setWordWrap(true);
+
+  // Put label in a layout so we can control internal padding
+  QVBoxLayout *bubbleLayout = new QVBoxLayout(bubbleFrame);
+  bubbleLayout->setContentsMargins(10, 10, 10, 10); // Padding inside the bubble
+  bubbleLayout->addWidget(msgLabel);
+
+  return bubbleFrame;
+}
 std::vector<std::string> get_contacts() {
   std::vector<std::string> a;
   a.push_back("Alice");
@@ -111,12 +150,37 @@ private:
     QVBoxLayout *rightLayout = new QVBoxLayout;
 
     QHBoxLayout *headerLayout = new QHBoxLayout;
-    QLabel *headerLabel = new QLabel("Chat with Alice");
+    QLabel *headerLabel = new QLabel("Alice");
+    headerLabel->setStyleSheet("font-weight: bold; font-size: 14pt;");
     headerLayout->addWidget(headerLabel);
 
-    QHBoxLayout *messageLayout = new QHBoxLayout;
-    QLabel *messageLabel = new QLabel("Message area");
-    messageLayout->addWidget(messageLabel);
+    QScrollArea *scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+
+    QWidget *scrollWidget = new QWidget();
+    QVBoxLayout *scrollLayout = new QVBoxLayout(scrollWidget);
+
+    for (int i = 0; i < 100; i++) {
+      QHBoxLayout *msgLayout = new QHBoxLayout();
+      bool isUser = rand() % 2;
+
+      // Create bubble
+      QFrame *bubble =
+          createMessageBubble(QString("Message %1").arg(i), isUser);
+
+      if (isUser) {
+        msgLayout->addStretch();
+        msgLayout->addWidget(bubble);
+      } else {
+        msgLayout->addWidget(bubble);
+        msgLayout->addStretch();
+      }
+      scrollLayout->addLayout(msgLayout);
+    }
+    scrollLayout->addStretch();
+
+    scrollWidget->setLayout(scrollLayout);
+    scrollArea->setWidget(scrollWidget);
 
     QHBoxLayout *inputLayout = new QHBoxLayout;
     TextEdit *typemsg = new TextEdit();
@@ -132,7 +196,34 @@ private:
 
     rightLayout->addLayout(headerLayout, 0);
     rightLayout->addWidget(createLine(Qt::Horizontal));
-    rightLayout->addLayout(messageLayout, 15);
+
+    QScrollBar *msgScrollBar = scrollArea->verticalScrollBar();
+    msgScrollBar->setStyleSheet(
+        "QScrollBar:vertical {"
+        "background: transparent;"
+        "width: 5px;"
+        "margin: 0;"
+        "}"
+        ""
+        "QScrollBar::handle:vertical {"
+        "background: #C3C0BB;"
+        "border-radius: 2.4px;"
+        "}"
+        ""
+        "QScrollBar::add-line:vertical {"
+        "height: 0px;"
+        "}"
+        ""
+        "QScrollBar::sub-line:vertical {"
+        "height: 0px;"
+        "}"
+        ""
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+        "height: 0px;"
+        "}");
+    msgScrollBar->setValue(msgScrollBar->maximum());
+
+    rightLayout->addWidget(scrollArea, 1);
     rightLayout->addWidget(createLine(Qt::Horizontal));
     rightLayout->addLayout(inputLayout);
 
