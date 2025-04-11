@@ -50,8 +50,27 @@ if(check!=SQLITE_DONE){
     sqlite3_close(db);
 return check;}
 else{
-    cout<<"Message inseted successfully!!!"<<endl;
+    cout<<"Message inserted successfully!!!"<<endl;
 }
+
+// reading the database
+check = sqlite3_prepare_v2(db,"SELECT * FROM mess;"
+                            ,-1,&stmt,nullptr);
+
+ if(check!=SQLITE_OK){
+    cerr<<"Error preparing statement!!!: "<<sqlite3_errmsg(db)<<endl;
+    sqlite3_close(db);
+return check;}
+
+while(sqlite3_step(stmt)==SQLITE_ROW){
+ int id = sqlite3_column_int(stmt,0);
+ const unsigned char* sen = sqlite3_column_text(stmt,1);
+ const unsigned char* rec = sqlite3_column_text(stmt,2);
+ const unsigned char* mess = sqlite3_column_text(stmt,3);
+ const unsigned char* time = sqlite3_column_text(stmt,4);
+cout<<"id: "<<id<<"\nSender: "<<sen<<"\nReciever: "<<rec<<"\nMessage: "<<mess<<"\nTime: "<<time<<endl;
+}
+
 //cleanup
 sqlite3_finalize(stmt);
 sqlite3_close(db);
