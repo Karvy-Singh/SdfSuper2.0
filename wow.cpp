@@ -4,6 +4,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QTextEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -21,8 +22,6 @@
 #include <ctime>
 #include <iostream>
 #include <memory>
-#include <mutex>
-#include <random>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -123,22 +122,20 @@ static QList<QString> dbRecentPartners(const QString &account)
     QList<QString> out;
     sqlite3 *db = openDb();
     const char *sql =
-        "SELECT partner FROM ("
-        "  SELECT rec_name AS partner, timestamp FROM mess "
-        "   WHERE account=? "
-        "  UNION ALL "
-        "  SELECT sen_name AS partner, timestamp FROM mess "
-        "   WHERE account=? ) "
-        "GROUP BY partner ORDER BY MAX(timestamp) DESC;";
+        "SELECT rec_name FROM mess "
+        "WHERE sen_name = ? "
+        "GROUP BY rec_name "
+        "ORDER BY MAX(timestamp) DESC;";
+
     sqlite3_stmt *st = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
         return out;
 
     sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
     while (sqlite3_step(st) == SQLITE_ROW)
         out << QString::fromUtf8(reinterpret_cast<const char *>(sqlite3_column_text(st, 0)));
+
     sqlite3_finalize(st);
     return out;
 }
@@ -363,8 +360,9 @@ public:
 
 
         connect(btn, &QPushButton::clicked, this, &LoginWindow::doLogin);
+        connect(user_, &QLineEdit::returnPressed, this, &LoginWindow::doLogin);
+        connect(pass_, &QLineEdit::returnPressed, this, &LoginWindow::doLogin);
 
-        
         connect(conn_, &ClientConnection::loginOK, this, &LoginWindow::loginGood);
         connect(conn_, &ClientConnection::serverNotice, this, &LoginWindow::loginBad);
         connect(conn_, &ClientConnection::fatalError, this, &LoginWindow::loginBad);
@@ -503,8 +501,11 @@ public:
         right->addWidget(createLine(Qt::Horizontal));
 
         auto inpLay = new QHBoxLayout;
-        msgEdit_ = new QLineEdit;
+
+        msgEdit_ = new QTextEdit;
+        msgEdit_->setFixedHeight(msgEdit_->fontMetrics().height() + 10);
         msgEdit_->setPlaceholderText("Type a message…");
+
         auto attachBtn = new IconButton("attach.svg");
         auto sendBtn = new IconButton("send.svg");
         inpLay->addWidget(msgEdit_);
@@ -520,7 +521,20 @@ public:
         setStyleSheet("background: lightyellow;");
 
         connect(addBtn, &QPushButton::clicked, this, &ChatWindow::addChat);
+        connect(newChatEdit_, &QLineEdit::returnPressed, this, &ChatWindow::addChat);
+
         connect(sendBtn, &QPushButton::clicked, this, &ChatWindow::sendMsg);
+        msgEdit_->installEventFilter(this);
+        connect(msgEdit_, &QTextEdit::textChanged, this, [=]() {
+          int lineHeight = msgEdit_->fontMetrics().lineSpacing();
+          int docHeight = msgEdit_->document()->size().height();
+          
+          int newHeight = std::ceil(docHeight * lineHeight / msgEdit_->fontMetrics().height()) + 10;
+
+          int maxHeight = 80; 
+          msgEdit_->setFixedHeight(qMin(newHeight, maxHeight));
+      });
+
 
         connect(conn_, &ClientConnection::incomingText, this, &ChatWindow::gotMsg);
         connect(conn_, &ClientConnection::serverNotice, this, &ChatWindow::info);
@@ -545,7 +559,7 @@ private slots:
     {
         if (cur_.isEmpty())
             return;
-        QString txt = msgEdit_->text().trimmed();
+        QString txt = msgEdit_->toPlainText().trimmed();
         if (txt.isEmpty())
             return;
         appendBubble(txt, true);
@@ -566,6 +580,19 @@ private slots:
         if (from == cur_)
             appendBubble(txt, false);
     }
+
+    bool eventFilter(QObject *obj, QEvent *event)
+    {
+    if (obj == msgEdit_ && event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return && !(keyEvent->modifiers() & Qt::ShiftModifier)) {
+            sendMsg();
+            return true;
+        }
+    }
+    return QWidget::eventFilter(obj, event);  
+    }
+
 
 private:
     QHBoxLayout *wrap(QWidget *w)
@@ -641,7 +668,7 @@ private:
     QString me_;
     QLabel *header_;
     QLineEdit *newChatEdit_;
-    QLineEdit *msgEdit_;
+    QTextEdit *msgEdit_;
     QScrollArea *scrollArea_;
     QVBoxLayout *scrollLay_;
     QVBoxLayout *chatBtnsLay_;
