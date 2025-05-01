@@ -16,16 +16,11 @@
 #include <QWidget>
 #include <QThread>
 #include <QTimer>
-#include <QFileDialog>
-#include <QDir>
-#include <QFileInfo>
-#include <filesystem>
 #include <sqlite3.h>
 #include <atomic>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -37,125 +32,6 @@
 
 using boost::asio::ip::tcp;
 using json = nlohmann::json;
-
-static const std::string base64_chars =
-             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-             "abcdefghijklmnopqrstuvwxyz"
-             "0123456789+/";
-
-static inline bool is_base64(unsigned char c) {
-  return (isalnum(c) || (c == '+') || (c == '/'));
-}
-
-void writefile(std::string filename, std::string data);
-std::string readfile(std::string &filename);
-std::string base64_encode(const std::vector<uint8_t>& data);
-std::vector<uint8_t> base64_decode(const std::string& encoded_string);
-
-std::string readfile(std::string &filename){
-  std::ifstream inFile(filename, std::ios::binary);
-  if (!inFile) {
-    std::cerr << "Error: Cannot open file for reading.\n";
-  }
-  auto file_contents= std::vector<uint8_t>(
-  std::istreambuf_iterator<char>(inFile),   
-  std::istreambuf_iterator<char>()        
-  );
-  return base64_encode(file_contents);
-}
-
-std::string base64_encode(const std::vector<uint8_t>& data) {
-    std::string encoded;
-    int i = 0, j = 0;
-    unsigned char char_array_3[3];
-    unsigned char char_array_4[4];
-
-    size_t in_len = data.size();
-    size_t index = 0;
-
-    while (in_len--) {
-        char_array_3[i++] = data[index++];
-        if (i == 3) {
-            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-            char_array_4[3] = char_array_3[2] & 0x3f;
-
-            for (i = 0; i < 4; i++)
-                encoded += base64_chars[char_array_4[i]];
-            
-            i = 0;
-        }
-    }
-    if (i) {
-        for (j = i; j < 3; j++)
-            char_array_3[j] = '\0';
-
-        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-        char_array_4[3] = char_array_3[2] & 0x3f;
-
-        for (j = 0; j < i + 1; j++)
-            encoded += base64_chars[char_array_4[j]];
-
-        while (i++ < 3)
-            encoded += '=';
-    }
-
-    return encoded;
-}
-
-void writefile(std::string filename, std::string data){
- std::vector<uint8_t> decoded_content= base64_decode(data);
- filename = std::filesystem::path(filename).filename().string();
- std::string destinationFile= "r"+filename;
- std::ofstream outFile(destinationFile, std::ios::binary);
- if (!outFile) {
-   std::cerr << "Error: Cannot open file for writing.\n";
-  }
- outFile.write(reinterpret_cast<const char*>(decoded_content.data()), decoded_content.size());
-};
-
-std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
-    int in_len = encoded_string.size();
-    int i = 0, j = 0, in_ = 0;
-    unsigned char char_array_4[4], char_array_3[3];
-    std::vector<uint8_t> decoded_data;
-
-    while (in_len-- && (encoded_string[in_] != '=') && is_base64(encoded_string[in_])) {
-        char_array_4[i++] = encoded_string[in_++];
-        if (i == 4) {
-            for (i = 0; i < 4; i++)
-                char_array_4[i] = base64_chars.find(char_array_4[i]);
-
-            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-            char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
-
-            for (i = 0; i < 3; i++)
-                decoded_data.push_back(char_array_3[i]);
-            i = 0;
-        }
-    }
-
-    if (i) {
-        for (j = i; j < 4; j++)
-            char_array_4[j] = 0;
-
-        for (j = 0; j < 4; j++)
-            char_array_4[j] = base64_chars.find(char_array_4[j]);
-
-        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-        char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
-
-        for (j = 0; j < i - 1; j++)
-            decoded_data.push_back(char_array_3[j]);
-    }
-
-    return decoded_data;
-}
 
 static sqlite3 *openDb()
 {
@@ -173,7 +49,6 @@ static sqlite3 *openDb()
         " sen_name  TEXT,"
         " rec_name  TEXT,"
         " mess      TEXT,"
-        " type      TEXT,"
         " timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);";
     char *err = nullptr;
     if (sqlite3_exec(db, create, nullptr, nullptr, &err) != SQLITE_OK)
@@ -186,7 +61,7 @@ static sqlite3 *openDb()
 }
 
 struct DbRow
-{   
+{
     QString txt;
     bool mine;
 };
@@ -194,12 +69,11 @@ struct DbRow
 static void dbInsert(const QString &account,
                      const QString &sen,
                      const QString &rec,
-                     const QString &msg,
-                     const QString &type)
+                     const QString &msg)
 {
     sqlite3 *db = openDb();
     const char *sql =
-        "INSERT INTO mess(account,sen_name,rec_name,mess,type) VALUES(?,?,?,?,?);";
+        "INSERT INTO mess(account,sen_name,rec_name,mess) VALUES(?,?,?,?);";
     sqlite3_stmt *st = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
         return;
@@ -207,7 +81,6 @@ static void dbInsert(const QString &account,
     sqlite3_bind_text(st, 2, sen.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(st, 3, rec.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(st, 4, msg.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 5, type.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_step(st);
     sqlite3_finalize(st);
 }
@@ -236,10 +109,9 @@ static QList<DbRow> dbLoadChat(const QString &account,
     {
         QString sender = QString::fromUtf8(
             reinterpret_cast<const char *>(sqlite3_column_text(st, 0)));
-        QString msg = QString::fromUtf8(
+        QString text = QString::fromUtf8(
             reinterpret_cast<const char *>(sqlite3_column_text(st, 1)));
-        
-        out << DbRow{msg, sender == account};
+        out << DbRow{text, sender == account};
     }
     sqlite3_finalize(st);
     return out;
@@ -314,21 +186,12 @@ public:
                   {"content", text.toStdString()}};
         sendPacket(0x02, j.dump());
     }
-    void sendFile(const QString &receiver, const QString &text,const QString &filename)
-    {
-        json j = {{"type", "file"},
-                  {"receiver", receiver.toStdString()},
-                  {"filename",filename.toStdString()},
-                  {"content", text.toStdString()}};
-        sendPacket(0x02, j.dump());
-    }
 
 signals:
     void connected();
     void loginOK();
     void loginFailed(const QString &reason);
-    void incomingText(const QString &from, const QString &message);   
-    void incomingFile(const QString &from,const QString &filename,const QString &payloadB64);
+    void incomingText(const QString &from, const QString &message);
     void serverNotice(const QString &text);
     void fatalError(const QString &what);
 
@@ -419,12 +282,6 @@ private:
             if (j["type"] == "text")
             {
                 emit incomingText(from, QString::fromStdString(j["content"]));
-            }
-            else if (j["type"] == "file")
-            {   
-                std::cout<<"file received";
-                emit incomingFile(from,QString::fromStdString(j["content"]),QString::fromStdString(j["content"]));
-                std::cout<<"file being processed";
             }
         }
         break;
@@ -666,8 +523,6 @@ public:
         connect(addBtn, &QPushButton::clicked, this, &ChatWindow::addChat);
         connect(newChatEdit_, &QLineEdit::returnPressed, this, &ChatWindow::addChat);
 
-        connect(attachBtn, &QPushButton::clicked, this, &ChatWindow::handleAttachClicked);
-
         connect(sendBtn, &QPushButton::clicked, this, &ChatWindow::sendMsg);
         msgEdit_->installEventFilter(this);
         connect(msgEdit_, &QTextEdit::textChanged, this, [=]() {
@@ -682,7 +537,6 @@ public:
 
 
         connect(conn_, &ClientConnection::incomingText, this, &ChatWindow::gotMsg);
-        connect(conn_, &ClientConnection::incomingFile, this, &ChatWindow::gotFile);
         connect(conn_, &ClientConnection::serverNotice, this, &ChatWindow::info);
     }
 
@@ -705,30 +559,15 @@ private slots:
     {
         if (cur_.isEmpty())
             return;
-        if(attachedFile_.isEmpty()){
         QString txt = msgEdit_->toPlainText().trimmed();
         if (txt.isEmpty())
             return;
         appendBubble(txt, true);
         chatItems_[cur_] << Msg{txt, true};
-        dbInsert(me_, me_, cur_, txt,"text");
+        dbInsert(me_, me_, cur_, txt);
         msgEdit_->clear();
-        conn_->sendText(cur_, txt);}
-        else{
-          QString txt = msgEdit_->toPlainText().trimmed();
-          if (txt.isEmpty())
-              return;
-          appendBubble(txt, true);
-          chatItems_[cur_] << Msg{txt, true};
-
-          std::string filename=attachedFile_.toStdString();
-          std::string metadata= readfile(filename);
-          dbInsert(me_, me_, cur_, txt,"file");
-          msgEdit_->clear();
-          conn_->sendFile(cur_,QString::fromStdString(filename),QString::fromStdString(metadata));
-        }
+        conn_->sendText(cur_, txt);
     }
-
     void gotMsg(const QString &from, const QString &txt)
     {
         if (!chatItems_.contains(from))
@@ -737,38 +576,9 @@ private slots:
             chatBtns_[from] = makeChatButton(from);
         }
         chatItems_[from] << Msg{txt, false};
-        dbInsert(me_, from, me_, txt,"text");
+        dbInsert(me_, from, me_, txt);
         if (from == cur_)
             appendBubble(txt, false);
-    }
-
-    void gotFile(const QString &from, const QString &txt)
-    {
-        if (!chatItems_.contains(from))
-        {
-            chatItems_[from];
-            chatBtns_[from] = makeChatButton(from);
-        }
-        QStringList parts = txt.split(':');
-        QString filename = parts.value(0);
-        QString metadata= parts.value(1);
-        QString text_Rec = "File received: " + filename;
-        chatItems_[from] << Msg{text_Rec, false};
-        writefile(filename.toStdString(),metadata.toStdString());
-        dbInsert(me_, from, me_, text_Rec,"file");
-        if (from == cur_)
-            appendBubble(text_Rec, false);
-    }
-
-
-    void handleAttachClicked()
-    {
-    QString qfilename = QFileDialog::getOpenFileName(this, "Select a file to attach", QDir::homePath());
-    if (!qfilename.isEmpty()) {
-        attachedFile_ = qfilename;
-        QString filenameOnly = QFileInfo(qfilename).fileName();
-        msgEdit_->append("Attached file: " + filenameOnly);    
-    }
     }
 
     bool eventFilter(QObject *obj, QEvent *event)
@@ -859,7 +669,6 @@ private:
     QLabel *header_;
     QLineEdit *newChatEdit_;
     QTextEdit *msgEdit_;
-    QString attachedFile_;
     QScrollArea *scrollArea_;
     QVBoxLayout *scrollLay_;
     QVBoxLayout *chatBtnsLay_;
