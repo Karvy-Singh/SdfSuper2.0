@@ -1,78 +1,85 @@
-#include <iostream>
-#include <fstream>
-#include <map>
-#include <sqlite3.h> 
-#include <format>
 #include <boost/asio.hpp>
-#include <stdbool.h>
+#include <format>
+#include <fstream>
+#include <iostream>
+#include <map>
 #include <nlohmann/json.hpp>
+#include <sqlite3.h>
+#include <stdbool.h>
 
 using boost::asio::ip::tcp;
 using json = nlohmann::json;
 
 class ChatServer;
 
-class putinsqldb{
+class putinsqldb {
   std::string username;
   std::string password;
-  public:
-    putinsqldb(std::string u, std::string p): username(u), password(p){}
-    void create_and_insert();
+
+public:
+  putinsqldb(std::string u, std::string p) : username(u), password(p) {}
+  void create_and_insert();
 };
 
-static int sqlcallback(void* data, int argc, char** argv, char** azColName) {
-    if (argc > 0 && argv[0]) { 
-      int count = std::stoi(argv[0]); 
-      bool* exists = static_cast<bool*>(data);
-      *exists = (count > 0); 
-    }
-    return 0;
+static int sqlcallback(void *data, int argc, char **argv, char **azColName) {
+  if (argc > 0 && argv[0]) {
+    int count = std::stoi(argv[0]);
+    bool *exists = static_cast<bool *>(data);
+    *exists = (count > 0);
+  }
+  return 0;
 }
 
-bool userExists(sqlite3* db, const std::string& username, const std::string& password) {
-    std::string sql = "SELECT COUNT(*) FROM USER WHERE USERNAME = '" + username + "' AND PASSWORD = '" + password + "';";
-    
-    bool exists = false;
-    char* errMsg = nullptr;
-    
-    if (sqlite3_exec(db, sql.c_str(), sqlcallback, &exists, &errMsg) != SQLITE_OK) {
-        std::cerr << "Error: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
-        return false;
-    }
-    
-    return exists;
+bool userExists(sqlite3 *db, const std::string &username,
+                const std::string &password) {
+  std::string sql = "SELECT COUNT(*) FROM USER WHERE USERNAME = '" + username +
+                    "' AND PASSWORD = '" + password + "';";
+
+  bool exists = false;
+  char *errMsg = nullptr;
+
+  if (sqlite3_exec(db, sql.c_str(), sqlcallback, &exists, &errMsg) !=
+      SQLITE_OK) {
+    std::cerr << "Error: " << errMsg << std::endl;
+    sqlite3_free(errMsg);
+    return false;
+  }
+
+  return exists;
 }
 
-void putinsqldb::create_and_insert(){
-  sqlite3* DB; 
-  char* messageError;
-  int exit = sqlite3_open("user_data.db", &DB); 
+void putinsqldb::create_and_insert() {
+  sqlite3 *DB;
+  char *messageError;
+  int exit = sqlite3_open("user_data.db", &DB);
   if (exit != SQLITE_OK) {
     std::cerr << "Error opening database" << std::endl;
-     }
-  std::string createtable= "CREATE TABLE IF NOT EXISTS USER("
+  }
+  std::string createtable = "CREATE TABLE IF NOT EXISTS USER("
                             "USERNAME TEXT NOT NULL,"
                             "PASSWORD TEXT NOT NULL);";
 
-  int tableStatus = sqlite3_exec(DB, createtable.c_str(), NULL, 0, &messageError);
+  int tableStatus =
+      sqlite3_exec(DB, createtable.c_str(), NULL, 0, &messageError);
 
   if (tableStatus != SQLITE_OK) {
-      std::cerr << "Error creating table: " << messageError << std::endl;
-      sqlite3_free(messageError);
-}
+    std::cerr << "Error creating table: " << messageError << std::endl;
+    sqlite3_free(messageError);
+  }
 
-  if(!userExists(DB,username,password)){
-  std::string insert= std::format("INSERT INTO USER(USERNAME,PASSWORD) VALUES('{}','{}');",username,password);
-  
-  int entryStatus= sqlite3_exec(DB, insert.c_str(), NULL, 0, &messageError);
-  
-  if (entryStatus != SQLITE_OK) {
+  if (!userExists(DB, username, password)) {
+    std::string insert =
+        std::format("INSERT INTO USER(USERNAME,PASSWORD) VALUES('{}','{}');",
+                    username, password);
+
+    int entryStatus = sqlite3_exec(DB, insert.c_str(), NULL, 0, &messageError);
+
+    if (entryStatus != SQLITE_OK) {
       std::cerr << "Error inserting into table: " << messageError << std::endl;
       sqlite3_free(messageError);
-}}
+    }
+  }
 }
-
 
 class Connection : public std::enable_shared_from_this<Connection> {
 private:
@@ -110,8 +117,7 @@ private:
 
 public:
   ChatServer(boost::asio::io_context &io, unsigned short port)
-      : io_(io),
-        acceptor_(io, tcp::endpoint(tcp::v4(), port)) {}
+      : io_(io), acceptor_(io, tcp::endpoint(tcp::v4(), port)) {}
   void start() { doAccept(); };
   void onDisconnect(std::shared_ptr<Connection> conn);
   void handleLogin(std::shared_ptr<Connection> conn,
@@ -157,11 +163,10 @@ void ChatServer::handleChatMessage(std::shared_ptr<Connection> sender,
     auto receiver_conn = it->second;
     std::string final_msg = sender->getUsername() + ": " + message;
     sendPacket(receiver_conn, 0x02, final_msg);
-  }else {
-    sendPacket(sender, 0xff, "Receiver " + receiver +  " does not exist");
+  } else {
+    sendPacket(sender, 0xff, "Receiver " + receiver + " does not exist");
   }
   // TODO: setup server messages (send not found) (done)
-
 }
 
 void ChatServer::sendPacket(std::shared_ptr<Connection> conn, uint8_t type,
@@ -190,13 +195,12 @@ void ChatServer::sendPacket(std::shared_ptr<Connection> conn, uint8_t type,
 void ChatServer::doAccept() {
   auto new_conn = std::make_shared<Connection>(io_, *this);
   acceptor_.async_accept(new_conn->socket(),
-   [this, new_conn](const boost::system::error_code &ec) {
-     if (!ec) {
-       new_conn->start();
-     }
-     doAccept();
-   }
-  );
+                         [this, new_conn](const boost::system::error_code &ec) {
+                           if (!ec) {
+                             new_conn->start();
+                           }
+                           doAccept();
+                         });
 }
 
 //=======================================
@@ -241,13 +245,15 @@ void Connection::close() {
 void Connection::send(const std::vector<uint8_t> &data) {
   if (!active_)
     return;
+
+  auto pkt = std::make_shared<std::vector<uint8_t>>(std::move(data));
   auto self = shared_from_this();
+
   boost::asio::async_write(
-      socket_, boost::asio::buffer(data),
-      [this, self](const boost::system::error_code &ec, std::size_t) {
-        if (ec) {
+      socket_, boost::asio::buffer(*pkt),
+      [this, self, pkt](const boost::system::error_code &ec, std::size_t) {
+        if (ec)
           server_.onDisconnect(self);
-        }
       });
 }
 
@@ -312,18 +318,18 @@ bool Connection::validateMagic(const std::array<char, 4> &magic) {
 }
 
 void Connection::handleMessage(uint8_t type, const std::string &value) {
-  json jsonobj= json::parse(value);
+  json jsonobj = json::parse(value);
   switch (type) {
   case 0x01: // login
-  { 
-    putinsqldb user(jsonobj["username"],jsonobj["password"]);
+  {
+    putinsqldb user(jsonobj["username"], jsonobj["password"]);
     user.create_and_insert();
     server_.handleLogin(shared_from_this(), jsonobj["username"]);
   } break;
 
   case 0x02: // chat message: TODO: serialise these messages to user ids
   {
-    std::string receiver= jsonobj["receiver"];
+    std::string receiver = jsonobj["receiver"];
     server_.handleChatMessage(shared_from_this(), receiver, value);
   } break;
 
