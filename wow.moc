@@ -21,8 +21,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_ClientConnection_t {
-    QByteArrayData data[16];
-    char stringdata0[145];
+    QByteArrayData data[19];
+    char stringdata0[172];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -40,19 +40,23 @@ QT_MOC_LITERAL(5, 48, 6), // "reason"
 QT_MOC_LITERAL(6, 55, 12), // "incomingText"
 QT_MOC_LITERAL(7, 68, 4), // "from"
 QT_MOC_LITERAL(8, 73, 7), // "message"
-QT_MOC_LITERAL(9, 81, 12), // "serverNotice"
-QT_MOC_LITERAL(10, 94, 4), // "text"
-QT_MOC_LITERAL(11, 99, 10), // "fatalError"
-QT_MOC_LITERAL(12, 110, 4), // "what"
-QT_MOC_LITERAL(13, 115, 12), // "incomingFile"
-QT_MOC_LITERAL(14, 128, 8), // "filename"
-QT_MOC_LITERAL(15, 137, 7) // "content"
+QT_MOC_LITERAL(9, 81, 14), // "incomingStatus"
+QT_MOC_LITERAL(10, 96, 4), // "user"
+QT_MOC_LITERAL(11, 101, 6), // "status"
+QT_MOC_LITERAL(12, 108, 12), // "serverNotice"
+QT_MOC_LITERAL(13, 121, 4), // "text"
+QT_MOC_LITERAL(14, 126, 10), // "fatalError"
+QT_MOC_LITERAL(15, 137, 4), // "what"
+QT_MOC_LITERAL(16, 142, 12), // "incomingFile"
+QT_MOC_LITERAL(17, 155, 8), // "filename"
+QT_MOC_LITERAL(18, 164, 7) // "content"
 
     },
     "ClientConnection\0connected\0\0loginOK\0"
     "loginFailed\0reason\0incomingText\0from\0"
-    "message\0serverNotice\0text\0fatalError\0"
-    "what\0incomingFile\0filename\0content"
+    "message\0incomingStatus\0user\0status\0"
+    "serverNotice\0text\0fatalError\0what\0"
+    "incomingFile\0filename\0content"
 };
 #undef QT_MOC_LITERAL
 
@@ -62,30 +66,32 @@ static const uint qt_meta_data_ClientConnection[] = {
        8,       // revision
        0,       // classname
        0,    0, // classinfo
-       7,   14, // methods
+       8,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
-       7,       // signalCount
+       8,       // signalCount
 
  // signals: name, argc, parameters, tag, flags
-       1,    0,   49,    2, 0x06 /* Public */,
-       3,    0,   50,    2, 0x06 /* Public */,
-       4,    1,   51,    2, 0x06 /* Public */,
-       6,    2,   54,    2, 0x06 /* Public */,
-       9,    1,   59,    2, 0x06 /* Public */,
-      11,    1,   62,    2, 0x06 /* Public */,
-      13,    3,   65,    2, 0x06 /* Public */,
+       1,    0,   54,    2, 0x06 /* Public */,
+       3,    0,   55,    2, 0x06 /* Public */,
+       4,    1,   56,    2, 0x06 /* Public */,
+       6,    2,   59,    2, 0x06 /* Public */,
+       9,    2,   64,    2, 0x06 /* Public */,
+      12,    1,   69,    2, 0x06 /* Public */,
+      14,    1,   72,    2, 0x06 /* Public */,
+      16,    3,   75,    2, 0x06 /* Public */,
 
  // signals: parameters
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void, QMetaType::QString,    5,
     QMetaType::Void, QMetaType::QString, QMetaType::QString,    7,    8,
-    QMetaType::Void, QMetaType::QString,   10,
-    QMetaType::Void, QMetaType::QString,   12,
-    QMetaType::Void, QMetaType::QString, QMetaType::QString, QMetaType::QByteArray,    7,   14,   15,
+    QMetaType::Void, QMetaType::QString, QMetaType::QString,   10,   11,
+    QMetaType::Void, QMetaType::QString,   13,
+    QMetaType::Void, QMetaType::QString,   15,
+    QMetaType::Void, QMetaType::QString, QMetaType::QString, QMetaType::QByteArray,    7,   17,   18,
 
        0        // eod
 };
@@ -100,9 +106,10 @@ void ClientConnection::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int
         case 1: _t->loginOK(); break;
         case 2: _t->loginFailed((*reinterpret_cast< const QString(*)>(_a[1]))); break;
         case 3: _t->incomingText((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2]))); break;
-        case 4: _t->serverNotice((*reinterpret_cast< const QString(*)>(_a[1]))); break;
-        case 5: _t->fatalError((*reinterpret_cast< const QString(*)>(_a[1]))); break;
-        case 6: _t->incomingFile((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])),(*reinterpret_cast< const QByteArray(*)>(_a[3]))); break;
+        case 4: _t->incomingStatus((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2]))); break;
+        case 5: _t->serverNotice((*reinterpret_cast< const QString(*)>(_a[1]))); break;
+        case 6: _t->fatalError((*reinterpret_cast< const QString(*)>(_a[1]))); break;
+        case 7: _t->incomingFile((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])),(*reinterpret_cast< const QByteArray(*)>(_a[3]))); break;
         default: ;
         }
     } else if (_c == QMetaObject::IndexOfMethod) {
@@ -136,23 +143,30 @@ void ClientConnection::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int
             }
         }
         {
-            using _t = void (ClientConnection::*)(const QString & );
-            if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ClientConnection::serverNotice)) {
+            using _t = void (ClientConnection::*)(const QString & , const QString & );
+            if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ClientConnection::incomingStatus)) {
                 *result = 4;
                 return;
             }
         }
         {
             using _t = void (ClientConnection::*)(const QString & );
-            if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ClientConnection::fatalError)) {
+            if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ClientConnection::serverNotice)) {
                 *result = 5;
+                return;
+            }
+        }
+        {
+            using _t = void (ClientConnection::*)(const QString & );
+            if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ClientConnection::fatalError)) {
+                *result = 6;
                 return;
             }
         }
         {
             using _t = void (ClientConnection::*)(const QString & , const QString & , const QByteArray & );
             if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ClientConnection::incomingFile)) {
-                *result = 6;
+                *result = 7;
                 return;
             }
         }
@@ -188,13 +202,13 @@ int ClientConnection::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 7)
+        if (_id < 8)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 7;
+        _id -= 8;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 7)
+        if (_id < 8)
             *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 7;
+        _id -= 8;
     }
     return _id;
 }
@@ -226,24 +240,31 @@ void ClientConnection::incomingText(const QString & _t1, const QString & _t2)
 }
 
 // SIGNAL 4
-void ClientConnection::serverNotice(const QString & _t1)
+void ClientConnection::incomingStatus(const QString & _t1, const QString & _t2)
 {
-    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
     QMetaObject::activate(this, &staticMetaObject, 4, _a);
 }
 
 // SIGNAL 5
-void ClientConnection::fatalError(const QString & _t1)
+void ClientConnection::serverNotice(const QString & _t1)
 {
     void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
     QMetaObject::activate(this, &staticMetaObject, 5, _a);
 }
 
 // SIGNAL 6
+void ClientConnection::fatalError(const QString & _t1)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
+    QMetaObject::activate(this, &staticMetaObject, 6, _a);
+}
+
+// SIGNAL 7
 void ClientConnection::incomingFile(const QString & _t1, const QString & _t2, const QByteArray & _t3)
 {
     void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t3))) };
-    QMetaObject::activate(this, &staticMetaObject, 6, _a);
+    QMetaObject::activate(this, &staticMetaObject, 7, _a);
 }
 struct qt_meta_stringdata_LoginWindow_t {
     QByteArrayData data[7];
@@ -372,8 +393,8 @@ void LoginWindow::loginSuccess()
     QMetaObject::activate(this, &staticMetaObject, 0, nullptr);
 }
 struct qt_meta_stringdata_ChatWindow_t {
-    QByteArrayData data[23];
-    char stringdata0[187];
+    QByteArrayData data[26];
+    char stringdata0[212];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -404,14 +425,18 @@ QT_MOC_LITERAL(18, 139, 17), // "appendImageBubble"
 QT_MOC_LITERAL(19, 157, 11), // "eventFilter"
 QT_MOC_LITERAL(20, 169, 3), // "obj"
 QT_MOC_LITERAL(21, 173, 7), // "QEvent*"
-QT_MOC_LITERAL(22, 181, 5) // "event"
+QT_MOC_LITERAL(22, 181, 5), // "event"
+QT_MOC_LITERAL(23, 187, 12), // "updateStatus"
+QT_MOC_LITERAL(24, 200, 4), // "user"
+QT_MOC_LITERAL(25, 205, 6) // "status"
 
     },
     "ChatWindow\0addChat\0\0openChat\0isImageFile\0"
     "filename\0sendMsg\0attachFile\0gotMsg\0"
     "from\0txt\0gotFile\0data\0appendFileBubble\0"
     "fname\0size\0mine\0payload\0appendImageBubble\0"
-    "eventFilter\0obj\0QEvent*\0event"
+    "eventFilter\0obj\0QEvent*\0event\0"
+    "updateStatus\0user\0status"
 };
 #undef QT_MOC_LITERAL
 
@@ -421,7 +446,7 @@ static const uint qt_meta_data_ChatWindow[] = {
        8,       // revision
        0,       // classname
        0,    0, // classinfo
-      10,   14, // methods
+      11,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -429,16 +454,17 @@ static const uint qt_meta_data_ChatWindow[] = {
        0,       // signalCount
 
  // slots: name, argc, parameters, tag, flags
-       1,    0,   64,    2, 0x08 /* Private */,
-       3,    0,   65,    2, 0x08 /* Private */,
-       4,    1,   66,    2, 0x08 /* Private */,
-       6,    0,   69,    2, 0x08 /* Private */,
-       7,    0,   70,    2, 0x08 /* Private */,
-       8,    2,   71,    2, 0x08 /* Private */,
-      11,    3,   76,    2, 0x08 /* Private */,
-      13,    4,   83,    2, 0x08 /* Private */,
-      18,    3,   92,    2, 0x08 /* Private */,
-      19,    2,   99,    2, 0x08 /* Private */,
+       1,    0,   69,    2, 0x08 /* Private */,
+       3,    0,   70,    2, 0x08 /* Private */,
+       4,    1,   71,    2, 0x08 /* Private */,
+       6,    0,   74,    2, 0x08 /* Private */,
+       7,    0,   75,    2, 0x08 /* Private */,
+       8,    2,   76,    2, 0x08 /* Private */,
+      11,    3,   81,    2, 0x08 /* Private */,
+      13,    4,   88,    2, 0x08 /* Private */,
+      18,    3,   97,    2, 0x08 /* Private */,
+      19,    2,  104,    2, 0x08 /* Private */,
+      23,    2,  109,    2, 0x0a /* Public */,
 
  // slots: parameters
     QMetaType::Void,
@@ -451,6 +477,7 @@ static const uint qt_meta_data_ChatWindow[] = {
     QMetaType::Void, QMetaType::QString, QMetaType::LongLong, QMetaType::Bool, QMetaType::QByteArray,   14,   15,   16,   17,
     QMetaType::Void, QMetaType::QString, QMetaType::QByteArray, QMetaType::Bool,    5,   12,   16,
     QMetaType::Bool, QMetaType::QObjectStar, 0x80000000 | 21,   20,   22,
+    QMetaType::Void, QMetaType::QString, QMetaType::QString,   24,   25,
 
        0        // eod
 };
@@ -473,6 +500,7 @@ void ChatWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         case 8: _t->appendImageBubble((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QByteArray(*)>(_a[2])),(*reinterpret_cast< bool(*)>(_a[3]))); break;
         case 9: { bool _r = _t->eventFilter((*reinterpret_cast< QObject*(*)>(_a[1])),(*reinterpret_cast< QEvent*(*)>(_a[2])));
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
+        case 10: _t->updateStatus((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2]))); break;
         default: ;
         }
     }
@@ -507,13 +535,13 @@ int ChatWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 10)
+        if (_id < 11)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 10;
+        _id -= 11;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 10)
+        if (_id < 11)
             *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 10;
+        _id -= 11;
     }
     return _id;
 }

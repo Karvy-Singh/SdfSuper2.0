@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <QDebug>
+#include <QSet>
 
 #include <boost/asio.hpp>
 #include <iostream>
@@ -34,6 +35,17 @@
 using boost::asio::ip::tcp;
 using json = nlohmann::json;
 static std::mutex dbMutex;
+
+static const char* baseButtonQSS =
+    "QPushButton {"
+      "border: none;"
+      "text-align: left;"
+      "padding: 8px;"
+      "background-color: transparent;"
+      "font-size: 16px;"
+      "border-radius: 4px;"
+    "}"
+    "QPushButton:hover { background: #e0e0e0; }";
 
 static sqlite3 *openDb() {
   static sqlite3 *db = nullptr;
@@ -217,6 +229,7 @@ signals:
   void loginOK();
   void loginFailed(const QString &reason);
   void incomingText(const QString &from, const QString &message);
+  void incomingStatus(const QString &user, const QString &status);
   void serverNotice(const QString &text);
   void fatalError(const QString &what);
   void incomingFile(const QString &from, const QString &filename,
@@ -305,6 +318,14 @@ private:
         emit incomingFile(from, fname, raw);
       }
     } break;
+
+    case 0x03: {  // presence update
+        json j = json::parse(value);
+        QString user   = QString::fromStdString(j["user"]);
+        QString status = QString::fromStdString(j["status"]);
+        emit incomingStatus(user, status);
+    } break;
+               
     default:
       break;
     }
@@ -548,6 +569,9 @@ public:
 
     connect(conn_, &ClientConnection::incomingText, this, &ChatWindow::gotMsg);
 
+    connect(conn_, &ClientConnection::incomingStatus,this,&ChatWindow::updateStatus);
+
+
     connect(conn_, &ClientConnection::incomingFile, this, &ChatWindow::gotFile);
     connect(conn_, &ClientConnection::serverNotice, this, &ChatWindow::info);
   }
@@ -562,7 +586,16 @@ private slots:
     newChatEdit_->clear();
     select(p);
   }
-  void openChat() { select(static_cast<QPushButton *>(sender())->text()); }
+  void openChat() { 
+    QString text = static_cast<QPushButton*>(sender())->text();
+     if (text.startsWith('[')) {
+       int idx = text.indexOf(']');
+       if (idx != -1 && text.size() > idx+2)
+         text = text.mid(idx + 2);
+     }
+     select(text); 
+  }
+
 
   bool isImageFile(const QString& filename)
 {
@@ -709,6 +742,41 @@ private slots:
     return QWidget::eventFilter(obj, event);
   }
 
+public slots:
+  void updateStatus(const QString &user,
+                              const QString &status)
+{
+    
+    if (user == me_)                              // ❶ never list myself
+        return;
+
+    bool isOnline = (status == "online");
+
+    if (!isOnline &&                             // ❷ ignore “offline” for
+        !chatBtns_.contains(user) &&             //    people I have never
+        !chatItems_.contains(user))              //    chatted with
+        return;
+
+    // 1) maintain your in-memory set
+    if (isOnline)    onlineUsers_.insert(user);
+    else             onlineUsers_.remove(user);
+
+    // 2) if there’s no button yet for this user, create one now
+    if (!chatBtns_.contains(user)) {
+        chatBtns_[user] = makeChatButton(user);
+    }
+    QPushButton* btn = chatBtns_[user];
+
+    // 3) style it
+    btn->setText(QString("[%1] %2")
+                 .arg(isOnline ? "online" : "offline")
+                 .arg(user));
+    btn->setEnabled(true);
+    QString color = isOnline ? "black" : "gray";
+    btn->setStyleSheet(baseButtonQSS +
+                       QString(" QPushButton { color:%1; }").arg(color));
+}
+
 private:
   QHBoxLayout *wrap(QWidget *w) {
     auto l = new QHBoxLayout;
@@ -792,27 +860,57 @@ void appendBubble(const QString &txt, bool mine) {
   QHash<QString, QList<Msg>> chatItems_;
   QHash<QString, QPushButton *> chatBtns_;
   QString cur_;
+  QSet<QString> onlineUsers_;
 };
 
-int main(int argc, char *argv[]) {
-  QApplication app(argc, argv);
+int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
 
-  auto conn = std::make_unique<ClientConnection>();
-  QObject::connect(
-      conn.get(), &ClientConnection::fatalError,
-      [](const QString &e) { std::cerr << e.toStdString() << '\n'; });
+    /* 1 ─ network object -------------------------------------------------- */
+    auto conn = std::make_unique<ClientConnection>();
 
-  LoginWindow login(conn.get());
-  login.show();
+    QObject::connect(conn.get(), &ClientConnection::fatalError,
+                     [](const QString& e) { std::cerr << e.toStdString() << '\n'; });
 
-  QObject::connect(&login, &LoginWindow::loginSuccess, [&] {
-    QString me = login.findChild<QLineEdit *>()->text();
-    ChatWindow *chat = new ChatWindow(conn.get(), me);
-    chat->show();
-  });
+    /* 2 ─ presence buffering --------------------------------------------- */
+    using Presence = QPair<QString, QString>;          // { user , status }
+    QVector<Presence>        presBuffer;               // packets that arrive
+    ChatWindow*              chat = nullptr;           // will be created later
 
-  conn->connectTo("127.0.0.1", 8080);
+    QObject::connect(conn.get(), &ClientConnection::incomingStatus,
+                     [&](const QString& user, const QString& status)
+    {
+        if (chat) {
+            // ChatWindow already exists → forward immediately (queued; thread-safe)
+            QMetaObject::invokeMethod(chat, "updateStatus", Qt::QueuedConnection,
+                                      Q_ARG(QString, user), Q_ARG(QString, status));
+        } else {
+            // Still on the login screen → stash it for later
+            presBuffer.append({user, status});
+        }
+    });
 
-  return app.exec();
+    /* 3 ─ login dialog ---------------------------------------------------- */
+    LoginWindow login(conn.get());
+    login.show();
+
+    QObject::connect(&login, &LoginWindow::loginSuccess, [&]()
+    {
+        /* 3a ─ build the chat UI ----------------------------------------- */
+        QString me = login.findChild<QLineEdit*>()->text();
+        chat = new ChatWindow(conn.get(), me);
+        chat->show();
+
+        /* 3b ─ flush buffered presence packets --------------------------- */
+        for (const Presence& p : std::as_const(presBuffer))
+            chat->updateStatus(p.first, p.second);
+        presBuffer.clear();
+    });
+
+    /* 4 ─ kick off the TCP connection ------------------------------------ */
+    conn->connectTo("127.0.0.1", 8080);
+
+    return app.exec();
 }
 #include "wow.moc"

@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <set>
 #include <nlohmann/json.hpp>
 #include <sqlite3.h>
 #include <stdbool.h>
@@ -143,6 +144,7 @@ public:
   void broadcastStatus(const std::string& user, const std::string& status);
   void sendPacket(std::shared_ptr<Connection> conn, uint8_t type,
                   const std::string &value);
+  std::set<std::string> onlineUsers_;
 };
 
 // ChatServer Thingy
@@ -153,6 +155,7 @@ void ChatServer::onDisconnect(std::shared_ptr<Connection> conn) {
     auto it = connections_.find(username);
     if (it != connections_.end() && it->second == conn) {
       connections_.erase(it);
+      onlineUsers_.erase(username);
     }
   }
   broadcastStatus(conn->getUsername(), "offline");
@@ -160,18 +163,67 @@ void ChatServer::onDisconnect(std::shared_ptr<Connection> conn) {
 }
 
 void ChatServer::handleLogin(std::shared_ptr<Connection> conn,
-                             const std::string &username) {
-  auto it = connections_.find(username);
-  if (it != connections_.end()) {
-    it->second->close();
-    connections_.erase(it);
-  }
-  conn->setUsername(username);
-  connections_[username] = conn;
-  // TODO: setup server messages (done)
-  sendPacket(conn, 0xff, "Logged in successfully");
-}
+                             const std::string& username)
+{
+    // 1) Kick any older session
+    if (auto it = connections_.find(username); it != connections_.end()) {
+        it->second->close();
+        connections_.erase(it);
+        onlineUsers_.erase(username);
+    }
 
+    // 2) Register the newcomer
+    conn->setUsername(username);
+    connections_[username] = conn;
+    onlineUsers_.insert(username);
+
+    // 3) Ack to the newcomer
+    sendPacket(conn, 0xff, "Logged in successfully");
+
+    // 4) Tell everybody else that 'username' is now online
+    {
+        json presence = {{"type","status"},
+                         {"user",username},
+                         {"status","online"}};
+        for (const auto& [u,c] : connections_)      // loop over all sockets
+            if (c != conn)                          //  …except the newcomer
+                sendPacket(c, 0x03, presence.dump());
+    }
+
+    // 5) Ensure the account exists in USER so the roster is complete
+    sqlite3* db = nullptr;
+    if (sqlite3_open("user_data.db", &db) == SQLITE_OK) {
+        sqlite3_exec(db,
+            "CREATE TABLE IF NOT EXISTS USER (USERNAME TEXT PRIMARY KEY);",
+            nullptr, nullptr, nullptr);
+
+        // INSERT OR IGNORE guarantees we do not duplicate rows
+        sqlite3_stmt* ins = nullptr;
+        if (sqlite3_prepare_v2(
+                db, "INSERT OR IGNORE INTO USER VALUES (?);",
+                -1, &ins, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(ins, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(ins);
+        }
+        sqlite3_finalize(ins);
+
+        // 6) Send the full roster (online/offline) to the newcomer only
+        sqlite3_stmt* sel = nullptr;
+        if (sqlite3_prepare_v2(
+                db, "SELECT USERNAME FROM USER;", -1, &sel, nullptr) == SQLITE_OK) {
+            while (sqlite3_step(sel) == SQLITE_ROW) {
+                std::string u = reinterpret_cast<const char*>(
+                                    sqlite3_column_text(sel, 0));
+                json j = {{"type","status"},
+                          {"user",u},
+                          {"status", onlineUsers_.count(u) ? "online":"offline"}};
+                sendPacket(conn, 0x03, j.dump());
+            }
+        }
+        sqlite3_finalize(sel);
+        sqlite3_close(db);
+    }
+}
 void ChatServer::handleChatMessage(std::shared_ptr<Connection> sender,
                                    const std::string &receiver,
                                    const std::string &message) {
