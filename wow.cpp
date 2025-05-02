@@ -48,103 +48,172 @@ static const char* baseButtonQSS =
     "QPushButton:hover { background: #e0e0e0; }";
 
 static sqlite3 *openDb() {
-  static sqlite3 *db = nullptr;
-  if (db)
+    static sqlite3 *db = nullptr;
+    if (db) return db;
+
+    if (sqlite3_open("chat.db", &db) != SQLITE_OK)
+        qFatal("cannot open sqlite db: %s", sqlite3_errmsg(db));
+
+    sqlite3_busy_timeout(db, 5000);
+    sqlite3_exec(db, "PRAGMA journal_mode = WAL;", nullptr, nullptr, nullptr);
+
+    // 1) Create the table *only if it doesn't exist* (with the new schema)
+    const char *create = R"SQL(
+      CREATE TABLE IF NOT EXISTS mess (
+        id        INTEGER PRIMARY KEY,
+        account   TEXT,
+        sen_name  TEXT,
+        rec_name  TEXT,
+        mess      TEXT,
+        type      TEXT,
+        filename  TEXT,
+        filedata  BLOB,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    )SQL";
+    char *err = nullptr;
+    if (sqlite3_exec(db, create, nullptr, nullptr, &err) != SQLITE_OK)
+        qFatal("sqlite: %s", err);
+
+    // 2) Now migrate *old* tables by adding any missing columns:
+    sqlite3_exec(db,
+        "ALTER TABLE mess ADD COLUMN type     TEXT    DEFAULT 'text';",
+        nullptr, nullptr, nullptr);
+    sqlite3_exec(db,
+        "ALTER TABLE mess ADD COLUMN filename TEXT;",
+        nullptr, nullptr, nullptr);
+    sqlite3_exec(db,
+        "ALTER TABLE mess ADD COLUMN filedata BLOB;",
+        nullptr, nullptr, nullptr);
+
     return db;
-
-  if (sqlite3_open("chat.db", &db) != SQLITE_OK)
-    qFatal("cannot open sqlite db: %s", sqlite3_errmsg(db));
-
-  sqlite3_busy_timeout(db, 5000);               
-  sqlite3_exec(db, "PRAGMA journal_mode = WAL;", nullptr, nullptr, nullptr);
-
-  const char *create = "CREATE TABLE IF NOT EXISTS mess ("
-                       " id INTEGER PRIMARY KEY,"
-                       " account   TEXT,"
-                       " sen_name  TEXT,"
-                       " rec_name  TEXT,"
-                       " mess      TEXT,"
-                       " timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);";
-  char *err = nullptr;
-  if (sqlite3_exec(db, create, nullptr, nullptr, &err) != SQLITE_OK)
-    qFatal("sqlite: %s", err);
-
-  sqlite3_exec(db, "ALTER TABLE mess ADD COLUMN account TEXT;", nullptr,
-               nullptr, nullptr);
-
-  return db;
 }
 
 struct DbRow {
-  QString txt;
-  bool mine;
+    QString type;      // "text", "file" or "image"
+    QString txt;       // for legacy text or a placeholder like "[file] name"
+    QString filename;  // only for file/image
+    QByteArray blob;   // the raw bytes of file or image
+    bool    mine;
 };
 
 static void dbInsert(const QString &account,
                      const QString &sen,
                      const QString &rec,
-                     const QString &msg)
+                     const QString &msg,
+                     const QString &type     = QStringLiteral("text"),
+                     const QString &filename = QString(),
+                     const QByteArray &fileData = QByteArray())
 {
+    // open DB and log parameters
     sqlite3 *db = openDb();
     qDebug() << "[dbInsert] called with:"
              << " account=" << account
              << " sen="     << sen
              << " rec="     << rec
-             << " msg="     << msg;
+             << " msg="     << msg
+             << " type="    << type
+             << " filename="<< filename
+             << " fileData.size=" << fileData.size();
 
+    // serialize access
     std::lock_guard<std::mutex> guard(dbMutex);
 
-    const char *sql =
-        "INSERT INTO mess(account,sen_name,rec_name,mess) VALUES(?,?,?,?);";
+    // include the new columns type, filename, filedata
+    static const char *sql =
+        "INSERT INTO mess"
+        "(account, sen_name, rec_name, mess, type, filename, filedata) "
+        "VALUES(?,?,?,?,?,?,?);";
+
     sqlite3_stmt *st = nullptr;
     int rc = sqlite3_prepare_v2(db, sql, -1, &st, nullptr);
     if (rc != SQLITE_OK) {
         qDebug() << "[dbInsert] prepare error:" << sqlite3_errmsg(db);
         return;
     }
-    sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, sen.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 3, rec.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 4, msg.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
+    // bind mandatory TEXT fields
+    sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, sen.toUtf8().constData(),     -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, rec.toUtf8().constData(),     -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, msg.toUtf8().constData(),     -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, type.toUtf8().constData(),    -1, SQLITE_TRANSIENT);
+
+    // bind optional filename or NULL
+    if (!filename.isEmpty()) {
+        sqlite3_bind_text(st, 6, filename.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(st, 6);
+    }
+
+    // bind optional blob or NULL
+    if (!fileData.isEmpty()) {
+        sqlite3_bind_blob(st, 7, fileData.constData(),
+                          static_cast<int>(fileData.size()), SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(st, 7);
+    }
+
+    // execute
     rc = sqlite3_step(st);
     if (rc != SQLITE_DONE) {
         qDebug() << "[dbInsert] step error:" << sqlite3_errmsg(db)
-                 << " (rc=" << rc << ")";
+                 << "(rc=" << rc << ")";
     } else {
         qDebug() << "[dbInsert] success – row inserted";
     }
+
+    // clean up
     sqlite3_finalize(st);
 }
 
-
-static QList<DbRow> dbLoadChat(const QString &account, const QString &partner) {
-  QList<DbRow> out;
-  sqlite3 *db = openDb();
-  const char *sql =
-      "SELECT sen_name,mess FROM mess "
+static QList<DbRow> dbLoadChat(const QString &account,
+                               const QString &partner)
+{
+    QList<DbRow> out;
+    sqlite3 *db = openDb();
+    const char *sql =
+      "SELECT sen_name, mess, type, filename, filedata "
+      "FROM mess "
       "WHERE account=? AND "
       "  ((sen_name=? AND rec_name=?) OR (sen_name=? AND rec_name=?)) "
-      "ORDER BY timestamp ASC,id ASC;";
-  sqlite3_stmt *st = nullptr;
-  if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
+      "ORDER BY id ASC;";
+
+    sqlite3_stmt *st = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
+        return out;
+
+    // bind the five placeholders
+    sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 5, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+
+    while (sqlite3_step(st) == SQLITE_ROW) {
+        QString sender = QString::fromUtf8(
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 0)));
+        QString text = QString::fromUtf8(
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 1)));
+        QString type = QString::fromUtf8(
+            reinterpret_cast<const char*>(sqlite3_column_text(st, 2)));
+
+        const char* fn = reinterpret_cast<const char*>(
+             sqlite3_column_text(st, 3));
+        QByteArray blob;
+        const void* data = sqlite3_column_blob(st, 4);
+        int         sz   = sqlite3_column_bytes(st, 4);
+        if (data && sz > 0)
+            blob = QByteArray(reinterpret_cast<const char*>(data), sz);
+
+        out << DbRow{ type,
+                      text,
+                      fn ? QString::fromUtf8(fn) : QString(),
+                      blob,
+                      (sender == account) };
+    }
+    sqlite3_finalize(st);
     return out;
-
-  sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(st, 2, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(st, 3, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(st, 4, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(st, 5, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-
-  while (sqlite3_step(st) == SQLITE_ROW) {
-    QString sender = QString::fromUtf8(
-        reinterpret_cast<const char *>(sqlite3_column_text(st, 0)));
-    QString text = QString::fromUtf8(
-        reinterpret_cast<const char *>(sqlite3_column_text(st, 1)));
-    out << DbRow{text, sender == account};
-  }
-  sqlite3_finalize(st);
-  return out;
 }
 
 static QList<QString> dbRecentPartners(const QString &account) {
@@ -612,7 +681,7 @@ private slots:
       return;
     appendBubble(txt, true);
     chatItems_[cur_] << Msg{txt, true};
-    dbInsert(me_, me_, cur_, txt);
+    dbInsert(me_, me_, cur_, txt,"text");
     msgEdit_->clear();
     conn_->sendText(cur_, txt);
   }
@@ -630,16 +699,19 @@ private slots:
     QFileInfo fi(path);
     QByteArray content;
 
+    QFile f(path);
+    if (f.open(QIODevice::ReadOnly))
+    {content = f.readAll();}
+
     if (isImageFile(path)) {
-        QFile f(path);
-        if (f.open(QIODevice::ReadOnly))
-            content = f.readAll();
+         dbInsert(me_, me_, cur_, "[img]"+path,"image",fi.fileName(),content);
         appendImageBubble(fi.fileName(), content, true);
     } else {
         appendFileBubble(fi.fileName(), fi.size(), true, QByteArray());
+        dbInsert(me_, me_, cur_, "[FILE]"+path,"file",fi.fileName(),content);
     }
 
-    dbInsert(me_, me_, cur_, "[FILE]"+path);
+    //dbInsert(me_, me_, cur_, "[FILE]"+path);
   }
 
   void gotMsg(const QString &from, const QString &txt) {
@@ -649,7 +721,7 @@ private slots:
       chatBtns_[from] = makeChatButton(from);
     }
     chatItems_[from] << Msg{txt, false};
-    dbInsert(me_, from, me_, txt);
+    dbInsert(me_, from, me_, txt,"text");
     if (from == cur_)
       appendBubble(txt, false);
   }
@@ -662,16 +734,14 @@ private slots:
     }
     chatItems_[from] << Msg{filename, false};
 
-    QString placeholder = "[file] " + filename;
-    qDebug() << "[gotFile] persisting:" << placeholder
-             << " from:" << from << " me_:" << me_;
-    dbInsert(me_, from, me_, placeholder);
 
    // dbInsert(me_, from, me_, "[file] " + filename);
     
     if (isImageFile(filename)) {
+        dbInsert(me_, from, me_,"[img]"+filename,"image",filename,data);
         appendImageBubble(filename, data, false);
     } else {
+        dbInsert(me_, from, me_, "[file]"+filename,"file",filename,data);
         appendFileBubble(filename, data.size(), false, data);
     }    
  }
@@ -807,13 +877,67 @@ private:
     rebuild();
   }
 
+// void rebuild() {
+//     clearLayout(scrollLay_);
+// 
+//     // 1) Load every row from the DB
+//     auto rows = dbLoadChat(me_, cur_);
+// 
+//     // 2) Dispatch to the right append-helper
+//     for (const auto &r : rows) {
+//         if (r.type == "text") {
+//             appendBubble(r.txt, r.mine);
+//         }
+//         else if (r.type == "file") {
+//             appendFileBubble(
+//                 r.filename,
+//                 /*size=*/r.blob.size(),
+//                 /*mine=*/r.mine,
+//                 /*payload=*/r.blob
+//             );
+//         }
+//         else if (r.type == "image") {
+//             appendImageBubble(
+//                 r.filename,
+//                 /*data=*/r.blob,
+//                 /*mine=*/r.mine
+//             );
+//         }
+//     }
+// 
+//     // 3) One stretch at the very end so bubbles stack at top
+//     scrollLay_->addStretch();
+// 
+//     // 4) Scroll down to show the newest
+//     QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()] {
+//         sb->setValue(sb->maximum());
+//     });
+// }
+
 void rebuild() {
     clearLayout(scrollLay_);
 
     for (const DbRow &r : dbLoadChat(me_, cur_)) {
         auto h = new QHBoxLayout;
         if (r.mine)     h->addStretch();
-        h->addWidget(createMessageBubble(r.txt, r.mine));
+        if (r.type == "text") {
+            appendBubble(r.txt, r.mine);
+        }
+        else if (r.type == "file") {
+            appendFileBubble(
+                r.filename,
+                /*size=*/r.blob.size(),
+                /*mine=*/r.mine,
+                /*payload=*/r.blob
+            );
+        }
+        else if (r.type == "image") {
+            appendImageBubble(
+                r.filename,
+                /*data=*/r.blob,
+                /*mine=*/r.mine
+            );
+        }
         if (!r.mine)    h->addStretch();
         scrollLay_->addLayout(h);         
     }
