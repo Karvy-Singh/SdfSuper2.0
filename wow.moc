@@ -372,8 +372,8 @@ void LoginWindow::loginSuccess()
     QMetaObject::activate(this, &staticMetaObject, 0, nullptr);
 }
 struct qt_meta_stringdata_ChatWindow_t {
-    QByteArrayData data[21];
-    char stringdata0[157];
+    QByteArrayData data[23];
+    char stringdata0[187];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -386,30 +386,32 @@ QT_MOC_LITERAL(0, 0, 10), // "ChatWindow"
 QT_MOC_LITERAL(1, 11, 7), // "addChat"
 QT_MOC_LITERAL(2, 19, 0), // ""
 QT_MOC_LITERAL(3, 20, 8), // "openChat"
-QT_MOC_LITERAL(4, 29, 7), // "sendMsg"
-QT_MOC_LITERAL(5, 37, 6), // "gotMsg"
-QT_MOC_LITERAL(6, 44, 4), // "from"
-QT_MOC_LITERAL(7, 49, 3), // "txt"
-QT_MOC_LITERAL(8, 53, 7), // "gotFile"
-QT_MOC_LITERAL(9, 61, 8), // "filename"
-QT_MOC_LITERAL(10, 70, 4), // "data"
-QT_MOC_LITERAL(11, 75, 16), // "appendFileBubble"
-QT_MOC_LITERAL(12, 92, 5), // "fname"
-QT_MOC_LITERAL(13, 98, 4), // "size"
-QT_MOC_LITERAL(14, 103, 4), // "mine"
-QT_MOC_LITERAL(15, 108, 7), // "payload"
-QT_MOC_LITERAL(16, 116, 11), // "eventFilter"
-QT_MOC_LITERAL(17, 128, 3), // "obj"
-QT_MOC_LITERAL(18, 132, 7), // "QEvent*"
-QT_MOC_LITERAL(19, 140, 5), // "event"
-QT_MOC_LITERAL(20, 146, 10) // "attachFile"
+QT_MOC_LITERAL(4, 29, 11), // "isImageFile"
+QT_MOC_LITERAL(5, 41, 8), // "filename"
+QT_MOC_LITERAL(6, 50, 7), // "sendMsg"
+QT_MOC_LITERAL(7, 58, 10), // "attachFile"
+QT_MOC_LITERAL(8, 69, 6), // "gotMsg"
+QT_MOC_LITERAL(9, 76, 4), // "from"
+QT_MOC_LITERAL(10, 81, 3), // "txt"
+QT_MOC_LITERAL(11, 85, 7), // "gotFile"
+QT_MOC_LITERAL(12, 93, 4), // "data"
+QT_MOC_LITERAL(13, 98, 16), // "appendFileBubble"
+QT_MOC_LITERAL(14, 115, 5), // "fname"
+QT_MOC_LITERAL(15, 121, 4), // "size"
+QT_MOC_LITERAL(16, 126, 4), // "mine"
+QT_MOC_LITERAL(17, 131, 7), // "payload"
+QT_MOC_LITERAL(18, 139, 17), // "appendImageBubble"
+QT_MOC_LITERAL(19, 157, 11), // "eventFilter"
+QT_MOC_LITERAL(20, 169, 3), // "obj"
+QT_MOC_LITERAL(21, 173, 7), // "QEvent*"
+QT_MOC_LITERAL(22, 181, 5) // "event"
 
     },
-    "ChatWindow\0addChat\0\0openChat\0sendMsg\0"
-    "gotMsg\0from\0txt\0gotFile\0filename\0data\0"
-    "appendFileBubble\0fname\0size\0mine\0"
-    "payload\0eventFilter\0obj\0QEvent*\0event\0"
-    "attachFile"
+    "ChatWindow\0addChat\0\0openChat\0isImageFile\0"
+    "filename\0sendMsg\0attachFile\0gotMsg\0"
+    "from\0txt\0gotFile\0data\0appendFileBubble\0"
+    "fname\0size\0mine\0payload\0appendImageBubble\0"
+    "eventFilter\0obj\0QEvent*\0event"
 };
 #undef QT_MOC_LITERAL
 
@@ -419,7 +421,7 @@ static const uint qt_meta_data_ChatWindow[] = {
        8,       // revision
        0,       // classname
        0,    0, // classinfo
-       8,   14, // methods
+      10,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -427,24 +429,28 @@ static const uint qt_meta_data_ChatWindow[] = {
        0,       // signalCount
 
  // slots: name, argc, parameters, tag, flags
-       1,    0,   54,    2, 0x08 /* Private */,
-       3,    0,   55,    2, 0x08 /* Private */,
-       4,    0,   56,    2, 0x08 /* Private */,
-       5,    2,   57,    2, 0x08 /* Private */,
-       8,    3,   62,    2, 0x08 /* Private */,
-      11,    4,   69,    2, 0x08 /* Private */,
-      16,    2,   78,    2, 0x08 /* Private */,
-      20,    0,   83,    2, 0x08 /* Private */,
+       1,    0,   64,    2, 0x08 /* Private */,
+       3,    0,   65,    2, 0x08 /* Private */,
+       4,    1,   66,    2, 0x08 /* Private */,
+       6,    0,   69,    2, 0x08 /* Private */,
+       7,    0,   70,    2, 0x08 /* Private */,
+       8,    2,   71,    2, 0x08 /* Private */,
+      11,    3,   76,    2, 0x08 /* Private */,
+      13,    4,   83,    2, 0x08 /* Private */,
+      18,    3,   92,    2, 0x08 /* Private */,
+      19,    2,   99,    2, 0x08 /* Private */,
 
  // slots: parameters
     QMetaType::Void,
     QMetaType::Void,
+    QMetaType::Bool, QMetaType::QString,    5,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::QString, QMetaType::QString,    6,    7,
-    QMetaType::Void, QMetaType::QString, QMetaType::QString, QMetaType::QByteArray,    6,    9,   10,
-    QMetaType::Void, QMetaType::QString, QMetaType::LongLong, QMetaType::Bool, QMetaType::QByteArray,   12,   13,   14,   15,
-    QMetaType::Bool, QMetaType::QObjectStar, 0x80000000 | 18,   17,   19,
     QMetaType::Void,
+    QMetaType::Void, QMetaType::QString, QMetaType::QString,    9,   10,
+    QMetaType::Void, QMetaType::QString, QMetaType::QString, QMetaType::QByteArray,    9,    5,   12,
+    QMetaType::Void, QMetaType::QString, QMetaType::LongLong, QMetaType::Bool, QMetaType::QByteArray,   14,   15,   16,   17,
+    QMetaType::Void, QMetaType::QString, QMetaType::QByteArray, QMetaType::Bool,    5,   12,   16,
+    QMetaType::Bool, QMetaType::QObjectStar, 0x80000000 | 21,   20,   22,
 
        0        // eod
 };
@@ -457,13 +463,16 @@ void ChatWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         switch (_id) {
         case 0: _t->addChat(); break;
         case 1: _t->openChat(); break;
-        case 2: _t->sendMsg(); break;
-        case 3: _t->gotMsg((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2]))); break;
-        case 4: _t->gotFile((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])),(*reinterpret_cast< const QByteArray(*)>(_a[3]))); break;
-        case 5: _t->appendFileBubble((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< qint64(*)>(_a[2])),(*reinterpret_cast< bool(*)>(_a[3])),(*reinterpret_cast< const QByteArray(*)>(_a[4]))); break;
-        case 6: { bool _r = _t->eventFilter((*reinterpret_cast< QObject*(*)>(_a[1])),(*reinterpret_cast< QEvent*(*)>(_a[2])));
+        case 2: { bool _r = _t->isImageFile((*reinterpret_cast< const QString(*)>(_a[1])));
             if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
-        case 7: _t->attachFile(); break;
+        case 3: _t->sendMsg(); break;
+        case 4: _t->attachFile(); break;
+        case 5: _t->gotMsg((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2]))); break;
+        case 6: _t->gotFile((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])),(*reinterpret_cast< const QByteArray(*)>(_a[3]))); break;
+        case 7: _t->appendFileBubble((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< qint64(*)>(_a[2])),(*reinterpret_cast< bool(*)>(_a[3])),(*reinterpret_cast< const QByteArray(*)>(_a[4]))); break;
+        case 8: _t->appendImageBubble((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QByteArray(*)>(_a[2])),(*reinterpret_cast< bool(*)>(_a[3]))); break;
+        case 9: { bool _r = _t->eventFilter((*reinterpret_cast< QObject*(*)>(_a[1])),(*reinterpret_cast< QEvent*(*)>(_a[2])));
+            if (_a[0]) *reinterpret_cast< bool*>(_a[0]) = std::move(_r); }  break;
         default: ;
         }
     }
@@ -498,13 +507,13 @@ int ChatWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 8)
+        if (_id < 10)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 8;
+        _id -= 10;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 8)
+        if (_id < 10)
             *reinterpret_cast<int*>(_a[0]) = -1;
-        _id -= 8;
+        _id -= 10;
     }
     return _id;
 }

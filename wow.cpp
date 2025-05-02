@@ -536,6 +536,14 @@ private slots:
     select(p);
   }
   void openChat() { select(static_cast<QPushButton *>(sender())->text()); }
+
+  bool isImageFile(const QString& filename)
+{
+    QStringList exts = { "png", "jpg", "jpeg", "bmp", "gif", "webp" };
+    QString ext = QFileInfo(filename).suffix().toLower();
+    return exts.contains(ext);
+}
+
   void sendMsg() {
     if (cur_.isEmpty())
       return;
@@ -548,7 +556,34 @@ private slots:
     msgEdit_->clear();
     conn_->sendText(cur_, txt);
   }
+
+  void attachFile() {
+    if (cur_.isEmpty())
+      return;
+
+    QString path = QFileDialog::getOpenFileName(this, "Select a file to send");
+    if (path.isEmpty())
+      return;
+
+    conn_->sendFile(cur_, path);
+
+    QFileInfo fi(path);
+    QByteArray content;
+
+    if (isImageFile(path)) {
+        QFile f(path);
+        if (f.open(QIODevice::ReadOnly))
+            content = f.readAll();
+        appendImageBubble(fi.fileName(), content, true);
+    } else {
+        appendFileBubble(fi.fileName(), fi.size(), true, QByteArray());
+    }
+
+    dbInsert(me_, me_, cur_, "[FILE]"+path);
+  }
+
   void gotMsg(const QString &from, const QString &txt) {
+
     if (!chatItems_.contains(from)) {
       chatItems_[from];
       chatBtns_[from] = makeChatButton(from);
@@ -565,10 +600,16 @@ private slots:
       chatItems_[from];
       chatBtns_[from] = makeChatButton(from);
     }
-    chatItems_[from] << Msg{filename, false}; // store stub
-    appendFileBubble(filename, data.size(), false, data);
-    dbInsert(me_, from, me_, "[file] " + filename); // optional
-  }
+    chatItems_[from] << Msg{filename, false};
+
+    dbInsert(me_, from, me_, "[file] " + filename);
+    
+    if (isImageFile(filename)) {
+        appendImageBubble(filename, data, false);
+    } else {
+        appendFileBubble(filename, data.size(), false, data);
+    }    
+ }
 
   void appendFileBubble(const QString &fname, qint64 size, bool mine,
                         const QByteArray &payload) {
@@ -603,6 +644,27 @@ private slots:
       h->addStretch();
     scrollLay_->insertLayout(scrollLay_->count() - 1, h);
   }
+
+  void appendImageBubble(const QString& filename,
+                       const QByteArray& data,
+                       bool mine)
+{
+    QLabel* imageLabel = new QLabel;
+    QPixmap pix;
+    pix.loadFromData(data);
+    imageLabel->setPixmap(pix.scaledToWidth(200, Qt::SmoothTransformation));  // Or height if portrait
+    imageLabel->setScaledContents(true);
+
+    auto bubble = createMessageBubble(QString(), mine);
+    bubble->layout()->addWidget(imageLabel);
+
+    auto h = new QHBoxLayout;
+    if (mine) h->addStretch();
+    h->addWidget(bubble);
+    if (!mine) h->addStretch();
+    scrollLay_->insertLayout(scrollLay_->count() - 1, h);
+}
+
   bool eventFilter(QObject *obj, QEvent *event) {
     if (obj == msgEdit_ && event->type() == QEvent::KeyPress) {
       QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
@@ -613,20 +675,6 @@ private slots:
       }
     }
     return QWidget::eventFilter(obj, event);
-  }
-
-  void attachFile() {
-    if (cur_.isEmpty())
-      return;
-
-    QString path = QFileDialog::getOpenFileName(this, "Select a file to send");
-    if (path.isEmpty())
-      return;
-
-    conn_->sendFile(cur_, path);
-
-    QFileInfo fi(path);
-    appendFileBubble(fi.fileName(), fi.size(), true, QByteArray());
   }
 
 private:
