@@ -738,27 +738,36 @@ private:
     header_->setText(who);
     rebuild();
   }
-  void rebuild() {
+
+void rebuild() {
     clearLayout(scrollLay_);
 
-    chatItems_[cur_].clear();
-    for (const DbRow &r : dbLoadChat(me_, cur_))
-      chatItems_[cur_] << Msg{r.txt, r.mine};
-
-    for (const Msg &m : chatItems_[cur_])
-      appendBubble(m.text, m.mine);
-
+    for (const DbRow &r : dbLoadChat(me_, cur_)) {
+        auto h = new QHBoxLayout;
+        if (r.mine)     h->addStretch();
+        h->addWidget(createMessageBubble(r.txt, r.mine));
+        if (!r.mine)    h->addStretch();
+        scrollLay_->addLayout(h);         
+    }
     scrollLay_->addStretch();
-  }
-  void appendBubble(const QString &txt, bool mine) {
+    QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()] {
+        sb->setValue(sb->maximum());
+    });
+}
+
+void appendBubble(const QString &txt, bool mine) {
     auto h = new QHBoxLayout;
-    if (mine)
-      h->addStretch();
+    if (mine)     h->addStretch();
     h->addWidget(createMessageBubble(txt, mine));
-    if (!mine)
-      h->addStretch();
-    scrollLay_->addLayout(h);  
-  }
+    if (!mine)    h->addStretch();
+
+    scrollLay_->insertLayout(scrollLay_->count() - 1, h);
+
+    QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()] {
+        sb->setValue(sb->maximum());
+    });
+}
+
   void clearLayout(QLayout *lay) {
     while (auto it = lay->takeAt(0)) {
       if (it->layout())

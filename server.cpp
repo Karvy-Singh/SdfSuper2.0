@@ -44,7 +44,6 @@ bool userExists(sqlite3 *db, const std::string &username,
     sqlite3_free(errMsg);
     return false;
   }
-
   return exists;
 }
 
@@ -73,7 +72,7 @@ void putinsqldb::create_and_insert() {
   std::string createtable = "CREATE TABLE IF NOT EXISTS USER("
                             "USERNAME TEXT NOT NULL,"
                             "PASSWORD TEXT NOT NULL,"
-                            "PRIMARY KEY (USERNAME, PASSWORD));";
+                            "PRIMARY KEY USERNAME));";
 
   int tableStatus =
       sqlite3_exec(DB, createtable.c_str(), NULL, 0, &messageError);
@@ -350,7 +349,6 @@ void Connection::handleMessage(uint8_t type, const std::string &value) {
           server_.handleLogin(shared_from_this(), uname);
       } else if (userExists(udb, uname, pwd)) {
           server_.handleLogin(shared_from_this(), uname);
-
       } else {
           server_.sendPacket(shared_from_this(), 0xff,"Login failed: invalid password");
       }
