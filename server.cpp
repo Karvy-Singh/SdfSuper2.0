@@ -140,6 +140,7 @@ public:
   void handleChatMessage(std::shared_ptr<Connection> sender,
                          const std::string &receiver,
                          const std::string &message);
+  void broadcastStatus(const std::string& user, const std::string& status);
   void sendPacket(std::shared_ptr<Connection> conn, uint8_t type,
                   const std::string &value);
 };
@@ -154,6 +155,7 @@ void ChatServer::onDisconnect(std::shared_ptr<Connection> conn) {
       connections_.erase(it);
     }
   }
+  broadcastStatus(conn->getUsername(), "offline");
   conn->close();
 }
 
@@ -181,7 +183,18 @@ void ChatServer::handleChatMessage(std::shared_ptr<Connection> sender,
   } else {
     sendPacket(sender, 0xff, "Receiver " + receiver + " does not exist");
   }
-  // TODO: setup server messages (send not found) (done)
+}
+
+void ChatServer::broadcastStatus(const std::string& user, const std::string& status) {
+    json j = {
+      {"type",   "status"},
+      {"user",   user},
+      {"status", status}
+    };
+    std::string payload = j.dump();
+    for (auto &kv : connections_) {
+      sendPacket(kv.second, 0x03, payload);
+    }
 }
 
 void ChatServer::sendPacket(std::shared_ptr<Connection> conn, uint8_t type,
@@ -347,8 +360,10 @@ void Connection::handleMessage(uint8_t type, const std::string &value) {
           putinsqldb reg(uname, pwd);
           reg.create_and_insert();
           server_.handleLogin(shared_from_this(), uname);
+          server_.broadcastStatus(uname, "online");
       } else if (userExists(udb, uname, pwd)) {
           server_.handleLogin(shared_from_this(), uname);
+          server_.broadcastStatus(uname, "online");
       } else {
           server_.sendPacket(shared_from_this(), 0xff,"Login failed: invalid password");
       }
@@ -364,6 +379,6 @@ void Connection::handleMessage(uint8_t type, const std::string &value) {
 
   default: {
     server_.onDisconnect(shared_from_this());
-  } break;
+     } break;
   }
 }
