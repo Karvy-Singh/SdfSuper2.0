@@ -72,7 +72,7 @@ void putinsqldb::create_and_insert() {
   std::string createtable = "CREATE TABLE IF NOT EXISTS USER("
                             "USERNAME TEXT NOT NULL,"
                             "PASSWORD TEXT NOT NULL,"
-                            "PRIMARY KEY USERNAME));";
+                            "PRIMARY KEY (USERNAME));";
 
   int tableStatus =
       sqlite3_exec(DB, createtable.c_str(), NULL, 0, &messageError);
