@@ -36,29 +36,31 @@ using boost::asio::ip::tcp;
 using json = nlohmann::json;
 static std::mutex dbMutex;
 
-static const char* baseButtonQSS =
+static const char *baseButtonQSS =
     "QPushButton {"
-      "border: none;"
-      "text-align: left;"
-      "padding: 8px;"
-      "background-color: transparent;"
-      "font-size: 16px;"
-      "border-radius: 4px;"
+    "border: none;"
+    "text-align: left;"
+    "padding: 8px;"
+    "background-color: transparent;"
+    "font-size: 16px;"
+    "border-radius: 4px;"
     "}"
     "QPushButton:hover { background: #e0e0e0; }";
 
-static sqlite3 *openDb() {
-    static sqlite3 *db = nullptr;
-    if (db) return db;
+static sqlite3 *openDb()
+{
+  static sqlite3 *db = nullptr;
+  if (db)
+    return db;
 
-    if (sqlite3_open("chat.db", &db) != SQLITE_OK)
-        qFatal("cannot open sqlite db: %s", sqlite3_errmsg(db));
+  if (sqlite3_open("chat.db", &db) != SQLITE_OK)
+    qFatal("cannot open sqlite db: %s", sqlite3_errmsg(db));
 
-    sqlite3_busy_timeout(db, 5000);
-    sqlite3_exec(db, "PRAGMA journal_mode = WAL;", nullptr, nullptr, nullptr);
+  sqlite3_busy_timeout(db, 5000);
+  sqlite3_exec(db, "PRAGMA journal_mode = WAL;", nullptr, nullptr, nullptr);
 
-    // 1) Create the table *only if it doesn't exist* (with the new schema)
-    const char *create = R"SQL(
+  // 1) Create the table *only if it doesn't exist* (with the new schema)
+  const char *create = R"SQL(
       CREATE TABLE IF NOT EXISTS mess (
         id        INTEGER PRIMARY KEY,
         account   TEXT,
@@ -71,152 +73,165 @@ static sqlite3 *openDb() {
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     )SQL";
-    char *err = nullptr;
-    if (sqlite3_exec(db, create, nullptr, nullptr, &err) != SQLITE_OK)
-        qFatal("sqlite: %s", err);
+  char *err = nullptr;
+  if (sqlite3_exec(db, create, nullptr, nullptr, &err) != SQLITE_OK)
+    qFatal("sqlite: %s", err);
 
-    // 2) Now migrate *old* tables by adding any missing columns:
-    sqlite3_exec(db,
-        "ALTER TABLE mess ADD COLUMN type     TEXT    DEFAULT 'text';",
-        nullptr, nullptr, nullptr);
-    sqlite3_exec(db,
-        "ALTER TABLE mess ADD COLUMN filename TEXT;",
-        nullptr, nullptr, nullptr);
-    sqlite3_exec(db,
-        "ALTER TABLE mess ADD COLUMN filedata BLOB;",
-        nullptr, nullptr, nullptr);
+  // 2) Now migrate *old* tables by adding any missing columns:
+  sqlite3_exec(db,
+               "ALTER TABLE mess ADD COLUMN type     TEXT    DEFAULT 'text';",
+               nullptr, nullptr, nullptr);
+  sqlite3_exec(db,
+               "ALTER TABLE mess ADD COLUMN filename TEXT;",
+               nullptr, nullptr, nullptr);
+  sqlite3_exec(db,
+               "ALTER TABLE mess ADD COLUMN filedata BLOB;",
+               nullptr, nullptr, nullptr);
 
-    return db;
+  return db;
 }
 
-struct DbRow {
-    QString type;      // "text", "file" or "image"
-    QString txt;       // for legacy text or a placeholder like "[file] name"
-    QString filename;  // only for file/image
-    QByteArray blob;   // the raw bytes of file or image
-    bool    mine;
+struct DbRow
+{
+  QString type;     // "text", "file" or "image"
+  QString txt;      // for legacy text or a placeholder like "[file] name"
+  QString filename; // only for file/image
+  QByteArray blob;  // the raw bytes of file or image
+  bool mine;
 };
 
 static void dbInsert(const QString &account,
                      const QString &sen,
                      const QString &rec,
                      const QString &msg,
-                     const QString &type     = QStringLiteral("text"),
+                     const QString &type = QStringLiteral("text"),
                      const QString &filename = QString(),
                      const QByteArray &fileData = QByteArray())
 {
-    // open DB and log parameters
-    sqlite3 *db = openDb();
-    qDebug() << "[dbInsert] called with:"
-             << " account=" << account
-             << " sen="     << sen
-             << " rec="     << rec
-             << " msg="     << msg
-             << " type="    << type
-             << " filename="<< filename
-             << " fileData.size=" << fileData.size();
+  // open DB and log parameters
+  sqlite3 *db = openDb();
+  qDebug() << "[dbInsert] called with:"
+           << " account=" << account
+           << " sen=" << sen
+           << " rec=" << rec
+           << " msg=" << msg
+           << " type=" << type
+           << " filename=" << filename
+           << " fileData.size=" << fileData.size();
 
-    // serialize access
-    std::lock_guard<std::mutex> guard(dbMutex);
+  // serialize access
+  std::lock_guard<std::mutex> guard(dbMutex);
 
-    // include the new columns type, filename, filedata
-    static const char *sql =
-        "INSERT INTO mess"
-        "(account, sen_name, rec_name, mess, type, filename, filedata) "
-        "VALUES(?,?,?,?,?,?,?);";
+  // include the new columns type, filename, filedata
+  static const char *sql =
+      "INSERT INTO mess"
+      "(account, sen_name, rec_name, mess, type, filename, filedata) "
+      "VALUES(?,?,?,?,?,?,?);";
 
-    sqlite3_stmt *st = nullptr;
-    int rc = sqlite3_prepare_v2(db, sql, -1, &st, nullptr);
-    if (rc != SQLITE_OK) {
-        qDebug() << "[dbInsert] prepare error:" << sqlite3_errmsg(db);
-        return;
-    }
+  sqlite3_stmt *st = nullptr;
+  int rc = sqlite3_prepare_v2(db, sql, -1, &st, nullptr);
+  if (rc != SQLITE_OK)
+  {
+    qDebug() << "[dbInsert] prepare error:" << sqlite3_errmsg(db);
+    return;
+  }
 
-    // bind mandatory TEXT fields
-    sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, sen.toUtf8().constData(),     -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 3, rec.toUtf8().constData(),     -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 4, msg.toUtf8().constData(),     -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 5, type.toUtf8().constData(),    -1, SQLITE_TRANSIENT);
+  // bind mandatory TEXT fields
+  sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 2, sen.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 3, rec.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 4, msg.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 5, type.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
-    // bind optional filename or NULL
-    if (!filename.isEmpty()) {
-        sqlite3_bind_text(st, 6, filename.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    } else {
-        sqlite3_bind_null(st, 6);
-    }
+  // bind optional filename or NULL
+  if (!filename.isEmpty())
+  {
+    sqlite3_bind_text(st, 6, filename.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  }
+  else
+  {
+    sqlite3_bind_null(st, 6);
+  }
 
-    // bind optional blob or NULL
-    if (!fileData.isEmpty()) {
-        sqlite3_bind_blob(st, 7, fileData.constData(),
-                          static_cast<int>(fileData.size()), SQLITE_TRANSIENT);
-    } else {
-        sqlite3_bind_null(st, 7);
-    }
+  // bind optional blob or NULL
+  if (!fileData.isEmpty())
+  {
+    sqlite3_bind_blob(st, 7, fileData.constData(),
+                      static_cast<int>(fileData.size()), SQLITE_TRANSIENT);
+  }
+  else
+  {
+    sqlite3_bind_null(st, 7);
+  }
 
-    // execute
-    rc = sqlite3_step(st);
-    if (rc != SQLITE_DONE) {
-        qDebug() << "[dbInsert] step error:" << sqlite3_errmsg(db)
-                 << "(rc=" << rc << ")";
-    } else {
-        qDebug() << "[dbInsert] success – row inserted";
-    }
+  // execute
+  rc = sqlite3_step(st);
+  if (rc != SQLITE_DONE)
+  {
+    qDebug() << "[dbInsert] step error:" << sqlite3_errmsg(db)
+             << "(rc=" << rc << ")";
+  }
+  else
+  {
+    qDebug() << "[dbInsert] success – row inserted";
+  }
 
-    // clean up
-    sqlite3_finalize(st);
+  // clean up
+  sqlite3_finalize(st);
 }
 
 static QList<DbRow> dbLoadChat(const QString &account,
                                const QString &partner)
 {
-    QList<DbRow> out;
-    sqlite3 *db = openDb();
-    const char *sql =
+  QList<DbRow> out;
+  sqlite3 *db = openDb();
+  const char *sql =
       "SELECT sen_name, mess, type, filename, filedata "
       "FROM mess "
       "WHERE account=? AND "
       "  ((sen_name=? AND rec_name=?) OR (sen_name=? AND rec_name=?)) "
       "ORDER BY id ASC;";
 
-    sqlite3_stmt *st = nullptr;
-    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
-        return out;
-
-    // bind the five placeholders
-    sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 2, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 3, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 4, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(st, 5, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-
-    while (sqlite3_step(st) == SQLITE_ROW) {
-        QString sender = QString::fromUtf8(
-            reinterpret_cast<const char*>(sqlite3_column_text(st, 0)));
-        QString text = QString::fromUtf8(
-            reinterpret_cast<const char*>(sqlite3_column_text(st, 1)));
-        QString type = QString::fromUtf8(
-            reinterpret_cast<const char*>(sqlite3_column_text(st, 2)));
-
-        const char* fn = reinterpret_cast<const char*>(
-             sqlite3_column_text(st, 3));
-        QByteArray blob;
-        const void* data = sqlite3_column_blob(st, 4);
-        int         sz   = sqlite3_column_bytes(st, 4);
-        if (data && sz > 0)
-            blob = QByteArray(reinterpret_cast<const char*>(data), sz);
-
-        out << DbRow{ type,
-                      text,
-                      fn ? QString::fromUtf8(fn) : QString(),
-                      blob,
-                      (sender == account) };
-    }
-    sqlite3_finalize(st);
+  sqlite3_stmt *st = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
     return out;
+
+  // bind the five placeholders
+  sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 2, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 3, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 4, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 5, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+
+  while (sqlite3_step(st) == SQLITE_ROW)
+  {
+    QString sender = QString::fromUtf8(
+        reinterpret_cast<const char *>(sqlite3_column_text(st, 0)));
+    QString text = QString::fromUtf8(
+        reinterpret_cast<const char *>(sqlite3_column_text(st, 1)));
+    QString type = QString::fromUtf8(
+        reinterpret_cast<const char *>(sqlite3_column_text(st, 2)));
+
+    const char *fn = reinterpret_cast<const char *>(
+        sqlite3_column_text(st, 3));
+    QByteArray blob;
+    const void *data = sqlite3_column_blob(st, 4);
+    int sz = sqlite3_column_bytes(st, 4);
+    if (data && sz > 0)
+      blob = QByteArray(reinterpret_cast<const char *>(data), sz);
+
+    out << DbRow{type,
+                 text,
+                 fn ? QString::fromUtf8(fn) : QString(),
+                 blob,
+                 (sender == account)};
+  }
+  sqlite3_finalize(st);
+  return out;
 }
 
-static QList<QString> dbRecentPartners(const QString &account) {
+static QList<QString> dbRecentPartners(const QString &account)
+{
   QList<QString> out;
   sqlite3 *db = openDb();
   const char *sql = "SELECT rec_name FROM mess "
@@ -238,22 +253,28 @@ static QList<QString> dbRecentPartners(const QString &account) {
   return out;
 }
 
-class ClientConnection : public QObject {
+class ClientConnection : public QObject
+{
   Q_OBJECT
 public:
   explicit ClientConnection(QObject *parent = nullptr)
       : QObject(parent), io_(), socket_(io_),
-        work_(boost::asio::make_work_guard(io_)) {
-    thread_ = std::thread([this] { io_.run(); });
+        work_(boost::asio::make_work_guard(io_))
+  {
+    thread_ = std::thread([this]
+                          { io_.run(); });
   }
-  ~ClientConnection() override {
+  ~ClientConnection() override
+  {
     stop();
     if (thread_.joinable())
       thread_.join();
   }
 
-  void connectTo(const std::string &host, uint16_t port) {
-    post([=] {
+  void connectTo(const std::string &host, uint16_t port)
+  {
+    post([=]
+         {
       try {
         tcp::endpoint ep(boost::asio::ip::make_address(host), port);
         socket_.connect(ep);
@@ -261,22 +282,24 @@ public:
         emit connected();
       } catch (std::exception &e) {
         emit fatalError(QString::fromStdString(e.what()));
-      }
-    });
+      } });
   }
-  void login(const QString &user, const QString &pass) {
+  void login(const QString &user, const QString &pass)
+  {
     username_ = user.toStdString();
     json j = {{"username", username_}, {"password", pass.toStdString()}};
     sendPacket(0x01, j.dump());
   }
-  void sendText(const QString &receiver, const QString &text) {
+  void sendText(const QString &receiver, const QString &text)
+  {
     json j = {{"type", "text"},
               {"receiver", receiver.toStdString()},
               {"content", text.toStdString()}};
     sendPacket(0x02, j.dump());
   }
 
-  void sendFile(const QString &receiver, const QString &path) {
+  void sendFile(const QString &receiver, const QString &path)
+  {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
       return;
@@ -305,27 +328,34 @@ signals:
                     const QByteArray &content);
 
 private:
-  void stop() {
-    post([&] {
+  void stop()
+  {
+    post([&]
+         {
       boost::system::error_code ec;
       socket_.shutdown(tcp::socket::shutdown_both, ec);
       socket_.close(ec);
-      work_.reset();
-    });
+      work_.reset(); });
   }
-  template <typename F> void post(F &&fn) {
+  template <typename F>
+  void post(F &&fn)
+  {
     boost::asio::post(io_, std::forward<F>(fn));
   }
 
-  void doReadHeader() {
+  void doReadHeader()
+  {
     boost::asio::async_read(
         socket_, boost::asio::buffer(read_header_),
-        [this](auto ec, std::size_t bytes) {
-          if (ec || bytes != read_header_.size()) {
+        [this](auto ec, std::size_t bytes)
+        {
+          if (ec || bytes != read_header_.size())
+          {
             emit fatalError("Read error");
             return;
           }
-          if (!validateMagic()) {
+          if (!validateMagic())
+          {
             emit fatalError("Bad magic");
             return;
           }
@@ -334,20 +364,26 @@ private:
                     (static_cast<uint8_t>(read_header_[6]) << 16) |
                     (static_cast<uint8_t>(read_header_[7]) << 8) |
                     (static_cast<uint8_t>(read_header_[8]));
-          if (length_ == 0) {
+          if (length_ == 0)
+          {
             handlePacket(type_, "");
             doReadHeader();
-          } else {
+          }
+          else
+          {
             body_.resize(length_);
             doReadBody();
           }
         });
   }
-  void doReadBody() {
+  void doReadBody()
+  {
     boost::asio::async_read(
         socket_, boost::asio::buffer(body_),
-        [this](auto ec, std::size_t bytes) {
-          if (ec || bytes != body_.size()) {
+        [this](auto ec, std::size_t bytes)
+        {
+          if (ec || bytes != body_.size())
+          {
             emit fatalError("Read body failed");
             return;
           }
@@ -355,20 +391,24 @@ private:
           doReadHeader();
         });
   }
-  bool validateMagic() {
+  bool validateMagic()
+  {
     return read_header_[0] == 'J' && read_header_[1] == 'I' &&
            read_header_[2] == 'I' && read_header_[3] == 'T';
   }
 
-  void handlePacket(uint8_t type, const std::string &value) {
-    switch (type) {
+  void handlePacket(uint8_t type, const std::string &value)
+  {
+    switch (type)
+    {
     case 0xff:
       if (value == "Logged in successfully")
         emit loginOK();
       else
         emit serverNotice(QString::fromStdString(value));
       break;
-    case 0x02: {
+    case 0x02:
+    {
       auto pos = value.find(':');
       if (pos == std::string::npos)
         return;
@@ -376,9 +416,12 @@ private:
       QString from = QString::fromStdString(value.substr(0, pos));
       json j = json::parse(value.substr(pos + 1));
 
-      if (j["type"] == "text") {
+      if (j["type"] == "text")
+      {
         emit incomingText(from, QString::fromStdString(j["content"]));
-      } else if (j["type"] == "file") {
+      }
+      else if (j["type"] == "file")
+      {
         QString fname = QString::fromStdString(j["filename"]);
         QByteArray raw =
             QByteArray::fromBase64(QString::fromStdString(j["data"]).toUtf8(),
@@ -386,21 +429,25 @@ private:
 
         emit incomingFile(from, fname, raw);
       }
-    } break;
+    }
+    break;
 
-    case 0x03: {  // presence update
-        json j = json::parse(value);
-        QString user   = QString::fromStdString(j["user"]);
-        QString status = QString::fromStdString(j["status"]);
-        emit incomingStatus(user, status);
-    } break;
-               
+    case 0x03:
+    { // presence update
+      json j = json::parse(value);
+      QString user = QString::fromStdString(j["user"]);
+      QString status = QString::fromStdString(j["status"]);
+      emit incomingStatus(user, status);
+    }
+    break;
+
     default:
       break;
     }
   }
 
-  void sendPacket(uint8_t type, const std::string &value) {
+  void sendPacket(uint8_t type, const std::string &value)
+  {
     /* 1 ─ build the packet in a local vector */
     std::vector<uint8_t> buf;
     buf.insert(buf.end(), {'J', 'I', 'I', 'T'});
@@ -417,16 +464,14 @@ private:
 
     /* 3 ─ let Asio keep the shared_ptr alive */
     post([this, pktPtr] // capture the *pointer*
-         {
-           boost::asio::async_write(
+         { boost::asio::async_write(
                socket_, boost::asio::buffer(pktPtr->data(), pktPtr->size()),
                [this, pktPtr](auto ec, auto) // capture again here
                {
                  if (ec)
                    emit fatalError("Write failed");
                  /* pktPtr is destroyed here, after send completes */
-               });
-         });
+               }); });
   }
 
   boost::asio::io_context io_;
@@ -442,15 +487,18 @@ private:
   uint8_t type_{};
   std::vector<uint8_t> body_;
 };
-struct Msg {
+struct Msg
+{
   QString text;
   bool mine;
 };
-class LoginWindow : public QWidget {
+class LoginWindow : public QWidget
+{
   Q_OBJECT
 public:
   explicit LoginWindow(ClientConnection *conn, QWidget *parent = nullptr)
-      : QWidget(parent), conn_(conn) {
+      : QWidget(parent), conn_(conn)
+  {
     setWindowTitle("Login/Register");
     setFixedSize(860, 640);
     setStyleSheet("background-color: lightyellow;");
@@ -486,11 +534,13 @@ signals:
 
 private slots:
   void doLogin() { conn_->login(user_->text(), pass_->text()); }
-  void loginGood() {
+  void loginGood()
+  {
     emit loginSuccess();
     close();
   }
-  void loginBad(const QString &why) {
+  void loginBad(const QString &why)
+  {
     pass_->clear();
     pass_->setPlaceholderText("Login failed: " + why);
   }
@@ -501,23 +551,28 @@ private:
   QLineEdit *pass_;
 };
 
-QFrame *createLine(Qt::Orientation o) {
+QFrame *createLine(Qt::Orientation o)
+{
   QFrame *f = new QFrame;
   f->setFrameShape(o == Qt::Horizontal ? QFrame::HLine : QFrame::VLine);
   f->setFrameShadow(QFrame::Sunken);
   f->setLineWidth(1);
   return f;
 }
-QFrame *createMessageBubble(const QString &txt, bool self) {
+QFrame *createMessageBubble(const QString &txt, bool self)
+{
   QFrame *b = new QFrame;
   b->setFrameShape(QFrame::NoFrame);
   QGraphicsDropShadowEffect *sh = new QGraphicsDropShadowEffect;
   sh->setBlurRadius(5);
   b->setGraphicsEffect(sh);
-  if (self) {
+  if (self)
+  {
     b->setStyleSheet("QFrame {border-radius:10px;background:#D9FDD3;}");
     sh->setOffset(-1, 1);
-  } else {
+  }
+  else
+  {
     b->setStyleSheet("QFrame {border-radius:10px;background:#FFFFFF;}");
     sh->setOffset(1, 1);
   }
@@ -528,10 +583,12 @@ QFrame *createMessageBubble(const QString &txt, bool self) {
   bl->addWidget(lbl);
   return b;
 }
-class IconButton : public QPushButton {
+class IconButton : public QPushButton
+{
 public:
   explicit IconButton(const QString &iconPath, QWidget *parent = nullptr)
-      : QPushButton(QString(), parent) {
+      : QPushButton(QString(), parent)
+  {
     setIcon(QIcon(iconPath));
     setIconSize(QSize(20, 20));
     setStyleSheet("QPushButton {"
@@ -543,17 +600,20 @@ public:
   }
 
 protected:
-  void resizeEvent(QResizeEvent *e) override {
+  void resizeEvent(QResizeEvent *e) override
+  {
     QPushButton::resizeEvent(e);
     setFixedWidth(height());
   }
 };
-class ChatWindow : public QWidget {
+class ChatWindow : public QWidget
+{
   Q_OBJECT
 public:
   ChatWindow(ClientConnection *conn, const QString &me,
              QWidget *parent = nullptr)
-      : QWidget(parent), conn_(conn), me_(me) {
+      : QWidget(parent), conn_(conn), me_(me)
+  {
     auto left = new QVBoxLayout;
     auto userLbl = new QLabel(me_);
     userLbl->setStyleSheet("font-weight: bold; font-size: 14pt;");
@@ -571,13 +631,15 @@ public:
 
     chatBtnsLay_ = new QVBoxLayout;
     left->addLayout(chatBtnsLay_);
-    for (const QString &p : dbRecentPartners(me_)) {
+    for (const QString &p : dbRecentPartners(me_))
+    {
       if (!chatBtns_.contains(p))
         chatBtns_[p] = makeChatButton(p);
     }
 
     if (!chatBtns_.isEmpty())
-      QTimer::singleShot(0, [this] { select(chatBtns_.keys().first()); });
+      QTimer::singleShot(0, [this]
+                         { select(chatBtns_.keys().first()); });
 
     left->addStretch();
 
@@ -624,7 +686,8 @@ public:
     connect(attachBtn, &QPushButton::clicked, this, &ChatWindow::attachFile);
     connect(sendBtn, &QPushButton::clicked, this, &ChatWindow::sendMsg);
     msgEdit_->installEventFilter(this);
-    connect(msgEdit_, &QTextEdit::textChanged, this, [=]() {
+    connect(msgEdit_, &QTextEdit::textChanged, this, [=]()
+            {
       int lineHeight = msgEdit_->fontMetrics().lineSpacing();
       int docHeight = msgEdit_->document()->size().height();
 
@@ -633,47 +696,48 @@ public:
           10;
 
       int maxHeight = 80;
-      msgEdit_->setFixedHeight(qMin(newHeight, maxHeight));
-    });
+      msgEdit_->setFixedHeight(qMin(newHeight, maxHeight)); });
 
     connect(conn_, &ClientConnection::incomingText, this, &ChatWindow::gotMsg);
 
-    connect(conn_, &ClientConnection::incomingStatus,this,&ChatWindow::updateStatus);
-
+    connect(conn_, &ClientConnection::incomingStatus, this, &ChatWindow::updateStatus);
 
     connect(conn_, &ClientConnection::incomingFile, this, &ChatWindow::gotFile);
     connect(conn_, &ClientConnection::serverNotice, this, &ChatWindow::info);
   }
 
 private slots:
-  void addChat() {
-    QString p = newChatEdit_->text().trimmed();
-    if (p.isEmpty() || chatItems_.contains(p))
+  void addChat()
+  {
+    const QString p = newChatEdit_->text().trimmed();
+    if (p.isEmpty())
       return;
-    chatItems_[p];
-    chatBtns_[p] = makeChatButton(p);
+
+    ensureChatEntry(p);
     newChatEdit_->clear();
     select(p);
   }
-  void openChat() { 
-    QString text = static_cast<QPushButton*>(sender())->text();
-     if (text.startsWith('[')) {
-       int idx = text.indexOf(']');
-       if (idx != -1 && text.size() > idx+2)
-         text = text.mid(idx + 2);
-     }
-     select(text); 
+  void openChat()
+  {
+    QString text = static_cast<QPushButton *>(sender())->text();
+    if (text.startsWith('['))
+    {
+      int idx = text.indexOf(']');
+      if (idx != -1 && text.size() > idx + 2)
+        text = text.mid(idx + 2);
+    }
+    select(text);
   }
 
-
-  bool isImageFile(const QString& filename)
-{
-    QStringList exts = { "png", "jpg", "jpeg", "bmp", "gif", "webp" };
+  bool isImageFile(const QString &filename)
+  {
+    QStringList exts = {"png", "jpg", "jpeg", "bmp", "gif", "webp"};
     QString ext = QFileInfo(filename).suffix().toLower();
     return exts.contains(ext);
-}
+  }
 
-  void sendMsg() {
+  void sendMsg()
+  {
     if (cur_.isEmpty())
       return;
     QString txt = msgEdit_->toPlainText().trimmed();
@@ -681,12 +745,13 @@ private slots:
       return;
     appendBubble(txt, true);
     chatItems_[cur_] << Msg{txt, true};
-    dbInsert(me_, me_, cur_, txt,"text");
+    dbInsert(me_, me_, cur_, txt, "text");
     msgEdit_->clear();
     conn_->sendText(cur_, txt);
   }
 
-  void attachFile() {
+  void attachFile()
+  {
     if (cur_.isEmpty())
       return;
 
@@ -701,53 +766,65 @@ private slots:
 
     QFile f(path);
     if (f.open(QIODevice::ReadOnly))
-    {content = f.readAll();}
-
-    if (isImageFile(path)) {
-         dbInsert(me_, me_, cur_, "[img]"+path,"image",fi.fileName(),content);
-        appendImageBubble(fi.fileName(), content, true);
-    } else {
-        appendFileBubble(fi.fileName(), fi.size(), true, QByteArray());
-        dbInsert(me_, me_, cur_, "[FILE]"+path,"file",fi.fileName(),content);
+    {
+      content = f.readAll();
     }
 
-    //dbInsert(me_, me_, cur_, "[FILE]"+path);
+    if (isImageFile(path))
+    {
+      dbInsert(me_, me_, cur_, "[img]" + path, "image", fi.fileName(), content);
+      appendImageBubble(fi.fileName(), content, true);
+    }
+    else
+    {
+      appendFileBubble(fi.fileName(), fi.size(), true, QByteArray());
+      dbInsert(me_, me_, cur_, "[FILE]" + path, "file", fi.fileName(), content);
+    }
+
+    // dbInsert(me_, me_, cur_, "[FILE]"+path);
   }
 
-  void gotMsg(const QString &from, const QString &txt) {
-
-    if (!chatItems_.contains(from)) {
-      chatItems_[from];
-      chatBtns_[from] = makeChatButton(from);
+  void gotMsg(const QString &from, const QString &txt)
+  {
+    const bool online = onlineUsers_.contains(from);
+    if (!online) {
+      updateStatus(from, "online");
     }
+    ensureChatEntry(from); // <-- same here
     chatItems_[from] << Msg{txt, false};
-    dbInsert(me_, from, me_, txt,"text");
+    dbInsert(me_, from, me_, txt, "text");
+
     if (from == cur_)
       appendBubble(txt, false);
   }
 
   void gotFile(const QString &from, const QString &filename,
-               const QByteArray &data) {
-    if (!chatItems_.contains(from)) {
+               const QByteArray &data)
+  {
+    if (!chatItems_.contains(from))
+    {
       chatItems_[from];
       chatBtns_[from] = makeChatButton(from);
     }
     chatItems_[from] << Msg{filename, false};
 
+    // dbInsert(me_, from, me_, "[file] " + filename);
 
-   // dbInsert(me_, from, me_, "[file] " + filename);
-    
-    if (isImageFile(filename)) {
-        dbInsert(me_, from, me_,"[img]"+filename,"image",filename,data);
-        appendImageBubble(filename, data, false);
-    } else {
-        dbInsert(me_, from, me_, "[file]"+filename,"file",filename,data);
-        appendFileBubble(filename, data.size(), false, data);
-    }    
- }
+    if (isImageFile(filename))
+    {
+      dbInsert(me_, from, me_, "[img]" + filename, "image", filename, data);
+      appendImageBubble(filename, data, false);
+    }
+    else
+    {
+      dbInsert(me_, from, me_, "[file]" + filename, "file", filename, data);
+      appendFileBubble(filename, data.size(), false, data);
+    }
+  }
 
   void appendFileBubble(const QString &fname, qint64 size, bool mine,
-                        const QByteArray &payload) {
+                        const QByteArray &payload)
+  {
     QLabel *link = new QLabel(QStringLiteral("<a href=\"#\">%1</a> (%2 kB)")
                                   .arg(fname)
                                   .arg(size / 1024.0, 0, 'f', 1));
@@ -758,7 +835,8 @@ private slots:
     if (!payload.isEmpty()) // only incoming side has data
     {
       connect(link, &QLabel::linkActivated, this,
-              [payload, fname](const QString &) {
+              [payload, fname](const QString &)
+              {
                 QString dst = QFileDialog::getSaveFileName(
                     nullptr, "Save file as", fname);
                 if (dst.isEmpty())
@@ -780,31 +858,36 @@ private slots:
     scrollLay_->insertLayout(scrollLay_->count() - 1, h);
   }
 
-  void appendImageBubble(const QString& filename,
-                       const QByteArray& data,
-                       bool mine)
-{
-    QLabel* imageLabel = new QLabel;
+  void appendImageBubble(const QString &filename,
+                         const QByteArray &data,
+                         bool mine)
+  {
+    QLabel *imageLabel = new QLabel;
     QPixmap pix;
     pix.loadFromData(data);
-    imageLabel->setPixmap(pix.scaledToWidth(200, Qt::SmoothTransformation));  // Or height if portrait
+    imageLabel->setPixmap(pix.scaledToWidth(200, Qt::SmoothTransformation)); // Or height if portrait
     imageLabel->setScaledContents(true);
 
     auto bubble = createMessageBubble(QString(), mine);
     bubble->layout()->addWidget(imageLabel);
 
     auto h = new QHBoxLayout;
-    if (mine) h->addStretch();
+    if (mine)
+      h->addStretch();
     h->addWidget(bubble);
-    if (!mine) h->addStretch();
+    if (!mine)
+      h->addStretch();
     scrollLay_->insertLayout(scrollLay_->count() - 1, h);
-}
+  }
 
-  bool eventFilter(QObject *obj, QEvent *event) {
-    if (obj == msgEdit_ && event->type() == QEvent::KeyPress) {
+  bool eventFilter(QObject *obj, QEvent *event)
+  {
+    if (obj == msgEdit_ && event->type() == QEvent::KeyPress)
+    {
       QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
       if (keyEvent->key() == Qt::Key_Return &&
-          !(keyEvent->modifiers() & Qt::ShiftModifier)) {
+          !(keyEvent->modifiers() & Qt::ShiftModifier))
+      {
         sendMsg();
         return true;
       }
@@ -814,47 +897,46 @@ private slots:
 
 public slots:
   void updateStatus(const QString &user,
-                              const QString &status)
-{
-    
-    if (user == me_)                              // ❶ never list myself
-        return;
+                    const QString &status)
+  {
 
-    bool isOnline = (status == "online");
+    if (user == me_) // never list myself
+      return;
+   
 
-    if (!isOnline &&                             // ❷ ignore “offline” for
-        !chatBtns_.contains(user) &&             //    people I have never
-        !chatItems_.contains(user))              //    chatted with
-        return;
+    const bool online = (status == "online");
+    if (online)
+      onlineUsers_.insert(user);
+    else
+      onlineUsers_.remove(user);
 
-    // 1) maintain your in-memory set
-    if (isOnline)    onlineUsers_.insert(user);
-    else             onlineUsers_.remove(user);
 
-    // 2) if there’s no button yet for this user, create one now
-    if (!chatBtns_.contains(user)) {
-        chatBtns_[user] = makeChatButton(user);
-    }
-    QPushButton* btn = chatBtns_[user];
-
-    // 3) style it
-    btn->setText(QString("[%1] %2")
-                 .arg(isOnline ? "online" : "offline")
-                 .arg(user));
-    btn->setEnabled(true);
-    QString color = isOnline ? "black" : "gray";
-    btn->setStyleSheet(baseButtonQSS +
-                       QString(" QPushButton { color:%1; }").arg(color));
-}
+    applyPresenceLabel(user, online);
+  }
 
 private:
-  QHBoxLayout *wrap(QWidget *w) {
+  QHBoxLayout *wrap(QWidget *w)
+  {
     auto l = new QHBoxLayout;
     l->addWidget(w);
     return l;
   }
+  void applyPresenceLabel(const QString &user, bool online)
+  {
+    QPushButton *btn = chatBtns_.value(user, nullptr);
+    if (!btn)
+      return;
 
-  QPushButton *makeChatButton(const QString &name) {
+    btn->setText(QString("[%1] %2")
+                     .arg(online ? "online" : "offline", user));
+
+    btn->setStyleSheet(baseButtonQSS +
+                       QStringLiteral(" QPushButton { color:%1; }")
+                           .arg(online ? "black" : "gray"));
+  }
+
+  QPushButton *makeChatButton(const QString &name)
+  {
     auto b = new QPushButton(name);
     b->setStyleSheet("QPushButton {"
                      "border: none;"
@@ -869,7 +951,22 @@ private:
     chatBtnsLay_->addWidget(b);
     return b;
   }
-  void select(const QString &who) {
+
+  void ensureChatEntry(const QString &user)
+  {
+    if (!chatItems_.contains(user))
+      chatItems_[user]; // create empty history slot
+
+    if (!chatBtns_.contains(user))
+      chatBtns_[user] = makeChatButton(user); // create the button once
+
+    /* look at the cache we filled in updateStatus() */
+    const bool online = onlineUsers_.contains(user);
+    applyPresenceLabel(user, online);
+  }
+
+  void select(const QString &who)
+  {
     if (cur_ == who)
       return;
     cur_ = who;
@@ -877,54 +974,62 @@ private:
     rebuild();
   }
 
-void rebuild() {
+  void rebuild()
+  {
     clearLayout(scrollLay_);
 
-    for (const DbRow &r : dbLoadChat(me_, cur_)) {
-        auto h = new QHBoxLayout;
-        if (r.mine)     h->addStretch();
-        if (r.type == "text") {
-            appendBubble(r.txt, r.mine);
-        }
-        else if (r.type == "file") {
-            appendFileBubble(
-                r.filename,
-                /*size=*/r.blob.size(),
-                /*mine=*/r.mine,
-                /*payload=*/r.blob
-            );
-        }
-        else if (r.type == "image") {
-            appendImageBubble(
-                r.filename,
-                /*data=*/r.blob,
-                /*mine=*/r.mine
-            );
-        }
-        if (!r.mine)    h->addStretch();
-        scrollLay_->addLayout(h);         
+    for (const DbRow &r : dbLoadChat(me_, cur_))
+    {
+      auto h = new QHBoxLayout;
+      if (r.mine)
+        h->addStretch();
+      if (r.type == "text")
+      {
+        appendBubble(r.txt, r.mine);
+      }
+      else if (r.type == "file")
+      {
+        appendFileBubble(
+            r.filename,
+            /*size=*/r.blob.size(),
+            /*mine=*/r.mine,
+            /*payload=*/r.blob);
+      }
+      else if (r.type == "image")
+      {
+        appendImageBubble(
+            r.filename,
+            /*data=*/r.blob,
+            /*mine=*/r.mine);
+      }
+      if (!r.mine)
+        h->addStretch();
+      scrollLay_->addLayout(h);
     }
     scrollLay_->addStretch();
-    QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()] {
-        sb->setValue(sb->maximum());
-    });
-}
+    QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()]
+                       { sb->setValue(sb->maximum()); });
+  }
 
-void appendBubble(const QString &txt, bool mine) {
+  void appendBubble(const QString &txt, bool mine)
+  {
     auto h = new QHBoxLayout;
-    if (mine)     h->addStretch();
+    if (mine)
+      h->addStretch();
     h->addWidget(createMessageBubble(txt, mine));
-    if (!mine)    h->addStretch();
+    if (!mine)
+      h->addStretch();
 
     scrollLay_->insertLayout(scrollLay_->count() - 1, h);
 
-    QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()] {
-        sb->setValue(sb->maximum());
-    });
-}
+    QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()]
+                       { sb->setValue(sb->maximum()); });
+  }
 
-  void clearLayout(QLayout *lay) {
-    while (auto it = lay->takeAt(0)) {
+  void clearLayout(QLayout *lay)
+  {
+    while (auto it = lay->takeAt(0))
+    {
       if (it->layout())
         clearLayout(it->layout());
       if (it->widget())
@@ -932,7 +1037,8 @@ void appendBubble(const QString &txt, bool mine) {
       delete it;
     }
   }
-  void info(const QString &m) {
+  void info(const QString &m)
+  {
     std::cout << "[Server] " << m.toStdString() << '\n';
   }
 
@@ -952,38 +1058,42 @@ void appendBubble(const QString &txt, bool mine) {
 
 int main(int argc, char *argv[])
 {
-    QApplication app(argc, argv);
+  QApplication app(argc, argv);
 
-    /* 1 ─ network object -------------------------------------------------- */
-    auto conn = std::make_unique<ClientConnection>();
+  /* 1 ─ network object -------------------------------------------------- */
+  auto conn = std::make_unique<ClientConnection>();
 
-    QObject::connect(conn.get(), &ClientConnection::fatalError,
-                     [](const QString& e) { std::cerr << e.toStdString() << '\n'; });
+  QObject::connect(conn.get(), &ClientConnection::fatalError,
+                   [](const QString &e)
+                   { std::cerr << e.toStdString() << '\n'; });
 
-    /* 2 ─ presence buffering --------------------------------------------- */
-    using Presence = QPair<QString, QString>;          // { user , status }
-    QVector<Presence>        presBuffer;               // packets that arrive
-    ChatWindow*              chat = nullptr;           // will be created later
+  /* 2 ─ presence buffering --------------------------------------------- */
+  using Presence = QPair<QString, QString>; // { user , status }
+  QVector<Presence> presBuffer;             // packets that arrive
+  ChatWindow *chat = nullptr;               // will be created later
 
-    QObject::connect(conn.get(), &ClientConnection::incomingStatus,
-                     [&](const QString& user, const QString& status)
-    {
-        if (chat) {
-            // ChatWindow already exists → forward immediately (queued; thread-safe)
-            QMetaObject::invokeMethod(chat, "updateStatus", Qt::QueuedConnection,
-                                      Q_ARG(QString, user), Q_ARG(QString, status));
-        } else {
-            // Still on the login screen → stash it for later
-            presBuffer.append({user, status});
-        }
-    });
+  QObject::connect(conn.get(), &ClientConnection::incomingStatus,
+                   [&](const QString &user, const QString &status)
+                   {
+                     if (chat)
+                     {
+                       // ChatWindow already exists → forward immediately (queued; thread-safe)
+                       QMetaObject::invokeMethod(chat, "updateStatus", Qt::QueuedConnection,
+                                                 Q_ARG(QString, user), Q_ARG(QString, status));
+                     }
+                     else
+                     {
+                       // Still on the login screen → stash it for later
+                       presBuffer.append({user, status});
+                     }
+                   });
 
-    /* 3 ─ login dialog ---------------------------------------------------- */
-    LoginWindow login(conn.get());
-    login.show();
+  /* 3 ─ login dialog ---------------------------------------------------- */
+  LoginWindow login(conn.get());
+  login.show();
 
-    QObject::connect(&login, &LoginWindow::loginSuccess, [&]()
-    {
+  QObject::connect(&login, &LoginWindow::loginSuccess, [&]()
+                   {
         /* 3a ─ build the chat UI ----------------------------------------- */
         QString me = login.findChild<QLineEdit*>()->text();
         chat = new ChatWindow(conn.get(), me);
@@ -992,12 +1102,12 @@ int main(int argc, char *argv[])
         /* 3b ─ flush buffered presence packets --------------------------- */
         for (const Presence& p : std::as_const(presBuffer))
             chat->updateStatus(p.first, p.second);
-        presBuffer.clear();
-    });
+        presBuffer.clear(); });
 
-    /* 4 ─ kick off the TCP connection ------------------------------------ */
-    conn->connectTo("127.0.0.1", 8080);
+  /* 4 ─ kick off the TCP connection ------------------------------------ */
+  conn->connectTo("127.0.0.1", 6969);
 
-    return app.exec();
+  return app.exec();
 }
+
 #include "wow.moc"
