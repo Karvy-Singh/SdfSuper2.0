@@ -877,43 +877,6 @@ private:
     rebuild();
   }
 
-// void rebuild() {
-//     clearLayout(scrollLay_);
-// 
-//     // 1) Load every row from the DB
-//     auto rows = dbLoadChat(me_, cur_);
-// 
-//     // 2) Dispatch to the right append-helper
-//     for (const auto &r : rows) {
-//         if (r.type == "text") {
-//             appendBubble(r.txt, r.mine);
-//         }
-//         else if (r.type == "file") {
-//             appendFileBubble(
-//                 r.filename,
-//                 /*size=*/r.blob.size(),
-//                 /*mine=*/r.mine,
-//                 /*payload=*/r.blob
-//             );
-//         }
-//         else if (r.type == "image") {
-//             appendImageBubble(
-//                 r.filename,
-//                 /*data=*/r.blob,
-//                 /*mine=*/r.mine
-//             );
-//         }
-//     }
-// 
-//     // 3) One stretch at the very end so bubbles stack at top
-//     scrollLay_->addStretch();
-// 
-//     // 4) Scroll down to show the newest
-//     QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()] {
-//         sb->setValue(sb->maximum());
-//     });
-// }
-
 void rebuild() {
     clearLayout(scrollLay_);
 
