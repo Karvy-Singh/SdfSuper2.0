@@ -48,6 +48,21 @@ bool userExists(sqlite3 *db, const std::string &username,
   return exists;
 }
 
+static bool userNameExists(sqlite3* db, const std::string& username) {
+    const char* sql = "SELECT COUNT(*) FROM USER WHERE USERNAME = ?;";
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
+        return false;
+    sqlite3_bind_text(st, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+
+    bool exists = false;
+    if (sqlite3_step(st) == SQLITE_ROW) {
+        exists = (sqlite3_column_int(st, 0) > 0);
+    }
+    sqlite3_finalize(st);
+    return exists;
+}
+
 void putinsqldb::create_and_insert() {
   sqlite3 *DB;
   char *messageError;
@@ -57,7 +72,8 @@ void putinsqldb::create_and_insert() {
   }
   std::string createtable = "CREATE TABLE IF NOT EXISTS USER("
                             "USERNAME TEXT NOT NULL,"
-                            "PASSWORD TEXT NOT NULL);";
+                            "PASSWORD TEXT NOT NULL,"
+                            "PRIMARY KEY (USERNAME, PASSWORD));";
 
   int tableStatus =
       sqlite3_exec(DB, createtable.c_str(), NULL, 0, &messageError);
@@ -203,9 +219,7 @@ void ChatServer::doAccept() {
                          });
 }
 
-//=======================================
-// main() for the server
-//=======================================
+
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     std::cerr << "Usage: " << argv[0] << " <port>\n";
@@ -320,14 +334,31 @@ bool Connection::validateMagic(const std::array<char, 4> &magic) {
 void Connection::handleMessage(uint8_t type, const std::string &value) {
   json jsonobj = json::parse(value);
   switch (type) {
-  case 0x01: // login
-  {
-    putinsqldb user(jsonobj["username"], jsonobj["password"]);
-    user.create_and_insert();
-    server_.handleLogin(shared_from_this(), jsonobj["username"]);
+  case 0x01: {  
+      sqlite3* udb = nullptr;
+      if (sqlite3_open("user_data.db", &udb) != SQLITE_OK) {
+          server_.sendPacket(shared_from_this(), 0xff,"Server error");
+          break;
+      }
+
+      auto uname = jsonobj["username"].get<std::string>();
+      auto pwd   = jsonobj["password"].get<std::string>();
+
+      if (!userNameExists(udb, uname)) {
+          putinsqldb reg(uname, pwd);
+          reg.create_and_insert();
+          server_.handleLogin(shared_from_this(), uname);
+      } else if (userExists(udb, uname, pwd)) {
+          server_.handleLogin(shared_from_this(), uname);
+
+      } else {
+          server_.sendPacket(shared_from_this(), 0xff,"Login failed: invalid password");
+      }
+      sqlite3_close(udb);
   } break;
 
-  case 0x02: // chat message: TODO: serialise these messages to user ids
+
+  case 0x02: 
   {
     std::string receiver = jsonobj["receiver"];
     server_.handleChatMessage(shared_from_this(), receiver, value);
