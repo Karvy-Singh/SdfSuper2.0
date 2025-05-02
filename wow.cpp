@@ -113,7 +113,7 @@ static QList<DbRow> dbLoadChat(const QString &account, const QString &partner) {
       "SELECT sen_name,mess FROM mess "
       "WHERE account=? AND "
       "  ((sen_name=? AND rec_name=?) OR (sen_name=? AND rec_name=?)) "
-      "ORDER BY timestamp;";
+      "ORDER BY timestamp ASC,id ASC;";
   sqlite3_stmt *st = nullptr;
   if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
     return out;
@@ -749,9 +749,6 @@ private:
       appendBubble(m.text, m.mine);
 
     scrollLay_->addStretch();
-    QTimer::singleShot(0, [sb = scrollArea_->verticalScrollBar()] {
-      sb->setValue(sb->maximum());
-    });
   }
   void appendBubble(const QString &txt, bool mine) {
     auto h = new QHBoxLayout;
@@ -760,7 +757,7 @@ private:
     h->addWidget(createMessageBubble(txt, mine));
     if (!mine)
       h->addStretch();
-    scrollLay_->insertLayout(scrollLay_->count() - 1, h);
+    scrollLay_->addLayout(h);  
   }
   void clearLayout(QLayout *lay) {
     while (auto it = lay->takeAt(0)) {
