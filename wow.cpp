@@ -25,6 +25,7 @@
 #include <sqlite3.h>
 #include <string>
 #include <thread>
+#include <QDebug>
 
 #include <boost/asio.hpp>
 #include <iostream>
@@ -32,6 +33,7 @@
 
 using boost::asio::ip::tcp;
 using json = nlohmann::json;
+static std::mutex dbMutex;
 
 static sqlite3 *openDb() {
   static sqlite3 *db = nullptr;
@@ -40,6 +42,9 @@ static sqlite3 *openDb() {
 
   if (sqlite3_open("chat.db", &db) != SQLITE_OK)
     qFatal("cannot open sqlite db: %s", sqlite3_errmsg(db));
+
+  sqlite3_busy_timeout(db, 5000);               
+  sqlite3_exec(db, "PRAGMA journal_mode = WAL;", nullptr, nullptr, nullptr);
 
   const char *create = "CREATE TABLE IF NOT EXISTS mess ("
                        " id INTEGER PRIMARY KEY,"
@@ -63,21 +68,43 @@ struct DbRow {
   bool mine;
 };
 
-static void dbInsert(const QString &account, const QString &sen,
-                     const QString &rec, const QString &msg) {
-  sqlite3 *db = openDb();
-  const char *sql =
-      "INSERT INTO mess(account,sen_name,rec_name,mess) VALUES(?,?,?,?);";
-  sqlite3_stmt *st = nullptr;
-  if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
-    return;
-  sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(st, 2, sen.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(st, 3, rec.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(st, 4, msg.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-  sqlite3_step(st);
-  sqlite3_finalize(st);
+static void dbInsert(const QString &account,
+                     const QString &sen,
+                     const QString &rec,
+                     const QString &msg)
+{
+    sqlite3 *db = openDb();
+    qDebug() << "[dbInsert] called with:"
+             << " account=" << account
+             << " sen="     << sen
+             << " rec="     << rec
+             << " msg="     << msg;
+
+    std::lock_guard<std::mutex> guard(dbMutex);
+
+    const char *sql =
+        "INSERT INTO mess(account,sen_name,rec_name,mess) VALUES(?,?,?,?);";
+    sqlite3_stmt *st = nullptr;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &st, nullptr);
+    if (rc != SQLITE_OK) {
+        qDebug() << "[dbInsert] prepare error:" << sqlite3_errmsg(db);
+        return;
+    }
+    sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, sen.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 3, rec.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 4, msg.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+
+    rc = sqlite3_step(st);
+    if (rc != SQLITE_DONE) {
+        qDebug() << "[dbInsert] step error:" << sqlite3_errmsg(db)
+                 << " (rc=" << rc << ")";
+    } else {
+        qDebug() << "[dbInsert] success – row inserted";
+    }
+    sqlite3_finalize(st);
 }
+
 
 static QList<DbRow> dbLoadChat(const QString &account, const QString &partner) {
   QList<DbRow> out;
@@ -602,7 +629,12 @@ private slots:
     }
     chatItems_[from] << Msg{filename, false};
 
-    dbInsert(me_, from, me_, "[file] " + filename);
+    QString placeholder = "[file] " + filename;
+    qDebug() << "[gotFile] persisting:" << placeholder
+             << " from:" << from << " me_:" << me_;
+    dbInsert(me_, from, me_, placeholder);
+
+   // dbInsert(me_, from, me_, "[file] " + filename);
     
     if (isImageFile(filename)) {
         appendImageBubble(filename, data, false);
