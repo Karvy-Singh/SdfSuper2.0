@@ -59,7 +59,6 @@ static sqlite3 *openDb()
   sqlite3_busy_timeout(db, 5000);
   sqlite3_exec(db, "PRAGMA journal_mode = WAL;", nullptr, nullptr, nullptr);
 
-  // 1) Create the table *only if it doesn't exist* (with the new schema)
   const char *create = R"SQL(
       CREATE TABLE IF NOT EXISTS mess (
         id        INTEGER PRIMARY KEY,
@@ -77,7 +76,6 @@ static sqlite3 *openDb()
   if (sqlite3_exec(db, create, nullptr, nullptr, &err) != SQLITE_OK)
     qFatal("sqlite: %s", err);
 
-  // 2) Now migrate *old* tables by adding any missing columns:
   sqlite3_exec(db,
                "ALTER TABLE mess ADD COLUMN type     TEXT    DEFAULT 'text';",
                nullptr, nullptr, nullptr);
@@ -93,10 +91,10 @@ static sqlite3 *openDb()
 
 struct DbRow
 {
-  QString type;     // "text", "file" or "image"
-  QString txt;      // for legacy text or a placeholder like "[file] name"
-  QString filename; // only for file/image
-  QByteArray blob;  // the raw bytes of file or image
+  QString type;     
+  QString txt;      
+  QString filename; 
+  QByteArray blob;  
   bool mine;
 };
 
@@ -108,7 +106,6 @@ static void dbInsert(const QString &account,
                      const QString &filename = QString(),
                      const QByteArray &fileData = QByteArray())
 {
-  // open DB and log parameters
   sqlite3 *db = openDb();
   qDebug() << "[dbInsert] called with:"
            << " account=" << account
@@ -119,10 +116,8 @@ static void dbInsert(const QString &account,
            << " filename=" << filename
            << " fileData.size=" << fileData.size();
 
-  // serialize access
   std::lock_guard<std::mutex> guard(dbMutex);
 
-  // include the new columns type, filename, filedata
   static const char *sql =
       "INSERT INTO mess"
       "(account, sen_name, rec_name, mess, type, filename, filedata) "
@@ -136,14 +131,12 @@ static void dbInsert(const QString &account,
     return;
   }
 
-  // bind mandatory TEXT fields
   sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 2, sen.toUtf8().constData(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 3, rec.toUtf8().constData(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 4, msg.toUtf8().constData(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 5, type.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
-  // bind optional filename or NULL
   if (!filename.isEmpty())
   {
     sqlite3_bind_text(st, 6, filename.toUtf8().constData(), -1, SQLITE_TRANSIENT);
@@ -153,7 +146,6 @@ static void dbInsert(const QString &account,
     sqlite3_bind_null(st, 6);
   }
 
-  // bind optional blob or NULL
   if (!fileData.isEmpty())
   {
     sqlite3_bind_blob(st, 7, fileData.constData(),
@@ -164,7 +156,6 @@ static void dbInsert(const QString &account,
     sqlite3_bind_null(st, 7);
   }
 
-  // execute
   rc = sqlite3_step(st);
   if (rc != SQLITE_DONE)
   {
@@ -176,7 +167,6 @@ static void dbInsert(const QString &account,
     qDebug() << "[dbInsert] success – row inserted";
   }
 
-  // clean up
   sqlite3_finalize(st);
 }
 
@@ -196,7 +186,6 @@ static QList<DbRow> dbLoadChat(const QString &account,
   if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) != SQLITE_OK)
     return out;
 
-  // bind the five placeholders
   sqlite3_bind_text(st, 1, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 2, account.toUtf8().constData(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 3, partner.toUtf8().constData(), -1, SQLITE_TRANSIENT);
@@ -433,7 +422,7 @@ private:
     break;
 
     case 0x03:
-    { // presence update
+    { 
       json j = json::parse(value);
       QString user = QString::fromStdString(j["user"]);
       QString status = QString::fromStdString(j["status"]);
@@ -448,7 +437,6 @@ private:
 
   void sendPacket(uint8_t type, const std::string &value)
   {
-    /* 1 ─ build the packet in a local vector */
     std::vector<uint8_t> buf;
     buf.insert(buf.end(), {'J', 'I', 'I', 'T'});
     buf.push_back(type);
@@ -459,18 +447,15 @@ private:
     buf.push_back(len & 0xff);
     buf.insert(buf.end(), value.begin(), value.end());
 
-    /* 2 ─ move that vector into a shared_ptr */
     auto pktPtr = std::make_shared<std::vector<uint8_t>>(std::move(buf));
 
-    /* 3 ─ let Asio keep the shared_ptr alive */
-    post([this, pktPtr] // capture the *pointer*
+    post([this, pktPtr] 
          { boost::asio::async_write(
                socket_, boost::asio::buffer(pktPtr->data(), pktPtr->size()),
-               [this, pktPtr](auto ec, auto) // capture again here
+               [this, pktPtr](auto ec, auto) 
                {
                  if (ec)
                    emit fatalError("Write failed");
-                 /* pktPtr is destroyed here, after send completes */
                }); });
   }
 
@@ -781,7 +766,6 @@ private slots:
       dbInsert(me_, me_, cur_, "[FILE]" + path, "file", fi.fileName(), content);
     }
 
-    // dbInsert(me_, me_, cur_, "[FILE]"+path);
   }
 
   void gotMsg(const QString &from, const QString &txt)
@@ -790,7 +774,7 @@ private slots:
     if (!online) {
       updateStatus(from, "online");
     }
-    ensureChatEntry(from); // <-- same here
+    ensureChatEntry(from); 
     chatItems_[from] << Msg{txt, false};
     dbInsert(me_, from, me_, txt, "text");
 
@@ -808,7 +792,6 @@ private slots:
     }
     chatItems_[from] << Msg{filename, false};
 
-    // dbInsert(me_, from, me_, "[file] " + filename);
 
     if (isImageFile(filename))
     {
@@ -832,7 +815,7 @@ private slots:
     link->setTextInteractionFlags(Qt::TextBrowserInteraction);
     link->setOpenExternalLinks(false);
 
-    if (!payload.isEmpty()) // only incoming side has data
+    if (!payload.isEmpty()) 
     {
       connect(link, &QLabel::linkActivated, this,
               [payload, fname](const QString &)
@@ -865,7 +848,7 @@ private slots:
     QLabel *imageLabel = new QLabel;
     QPixmap pix;
     pix.loadFromData(data);
-    imageLabel->setPixmap(pix.scaledToWidth(200, Qt::SmoothTransformation)); // Or height if portrait
+    imageLabel->setPixmap(pix.scaledToWidth(200, Qt::SmoothTransformation)); 
     imageLabel->setScaledContents(true);
 
     auto bubble = createMessageBubble(QString(), mine);
@@ -900,7 +883,7 @@ public slots:
                     const QString &status)
   {
 
-    if (user == me_) // never list myself
+    if (user == me_) 
       return;
    
 
@@ -955,12 +938,11 @@ private:
   void ensureChatEntry(const QString &user)
   {
     if (!chatItems_.contains(user))
-      chatItems_[user]; // create empty history slot
+      chatItems_[user]; 
 
     if (!chatBtns_.contains(user))
-      chatBtns_[user] = makeChatButton(user); // create the button once
+      chatBtns_[user] = makeChatButton(user); 
 
-    /* look at the cache we filled in updateStatus() */
     const bool online = onlineUsers_.contains(user);
     applyPresenceLabel(user, online);
   }
@@ -1060,52 +1042,44 @@ int main(int argc, char *argv[])
 {
   QApplication app(argc, argv);
 
-  /* 1 ─ network object -------------------------------------------------- */
   auto conn = std::make_unique<ClientConnection>();
 
   QObject::connect(conn.get(), &ClientConnection::fatalError,
                    [](const QString &e)
                    { std::cerr << e.toStdString() << '\n'; });
 
-  /* 2 ─ presence buffering --------------------------------------------- */
-  using Presence = QPair<QString, QString>; // { user , status }
-  QVector<Presence> presBuffer;             // packets that arrive
-  ChatWindow *chat = nullptr;               // will be created later
+  using Presence = QPair<QString, QString>; 
+  QVector<Presence> presBuffer;             
+  ChatWindow *chat = nullptr;               
 
   QObject::connect(conn.get(), &ClientConnection::incomingStatus,
                    [&](const QString &user, const QString &status)
                    {
                      if (chat)
                      {
-                       // ChatWindow already exists → forward immediately (queued; thread-safe)
                        QMetaObject::invokeMethod(chat, "updateStatus", Qt::QueuedConnection,
                                                  Q_ARG(QString, user), Q_ARG(QString, status));
                      }
                      else
                      {
-                       // Still on the login screen → stash it for later
                        presBuffer.append({user, status});
                      }
                    });
 
-  /* 3 ─ login dialog ---------------------------------------------------- */
   LoginWindow login(conn.get());
   login.show();
 
   QObject::connect(&login, &LoginWindow::loginSuccess, [&]()
                    {
-        /* 3a ─ build the chat UI ----------------------------------------- */
         QString me = login.findChild<QLineEdit*>()->text();
         chat = new ChatWindow(conn.get(), me);
         chat->show();
 
-        /* 3b ─ flush buffered presence packets --------------------------- */
         for (const Presence& p : std::as_const(presBuffer))
             chat->updateStatus(p.first, p.second);
         presBuffer.clear(); });
 
-  /* 4 ─ kick off the TCP connection ------------------------------------ */
-  conn->connectTo("127.0.0.1", 6969);
+  conn->connectTo("129.154.252.177", 6969);
 
   return app.exec();
 }
