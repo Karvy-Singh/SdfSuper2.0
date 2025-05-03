@@ -608,7 +608,7 @@ public:
     newChatEdit_ = new QLineEdit;
     newChatEdit_->setPlaceholderText("Start a new chat...");
 
-    auto addBtn = new IconButton("add.svg");
+    auto addBtn = new IconButton("assets/add.svg");
 
     newChatLay->addWidget(newChatEdit_);
     newChatLay->addWidget(addBtn);
@@ -650,8 +650,8 @@ public:
     msgEdit_->setFixedHeight(msgEdit_->fontMetrics().height() + 10);
     msgEdit_->setPlaceholderText("Type a message…");
 
-    auto attachBtn = new IconButton("attach.svg");
-    auto sendBtn = new IconButton("send.svg");
+    auto attachBtn = new IconButton("assets/attach.svg");
+    auto sendBtn = new IconButton("assets/send.svg");
     inpLay->addWidget(msgEdit_);
     inpLay->addWidget(attachBtn);
     inpLay->addWidget(sendBtn);
